@@ -4,7 +4,7 @@
 
 Phase 1: paste an `id.jobstreet.com` job URL → scrape → LLM-tailored CV → user approves/rejects. One site, end-to-end, no scaffolding for the other 42.
 
-**Status:** Phase 1 ✅ complete + verified end-to-end with real LLM (OpenRouter/DeepSeek). Next loop: **M9** (experiences prompt defect) → **M10** (Docker deploy verify) → **M11** (CD verify).
+**Status:** M9 complete — M10 next. Phase 1 ✅ complete + verified end-to-end with real LLM (OpenRouter/DeepSeek); M9 fixed the empty `experiences[]` defect (3/3 sample URLs now return non-empty, JD-derived experiences). Next loop: **M10** (Docker deploy verify) → **M11** (CD verify).
 
 Execution order is strict. Each milestone is verifiable before the next starts. Don't skip ahead; an unverified milestone rots.
 
@@ -155,10 +155,11 @@ Foundation so M2–M7 can cook and the result deploys anywhere. Direct edits in 
 
 The 2026-06-21 end-to-end verify returned an **empty `experiences[]`** — summary + skills were job-derived, but DeepSeek skipped experiences entirely. The generated CV is incomplete.
 
-- [ ] Tighten `build_prompt` in `src/generate.rs` — explicitly require ≥1 experience, name every field, show the exact JSON shape. Consider a stricter system instruction or a one-shot example.
-- [ ] Re-run a real `id.jobstreet.com` URL → confirm `experiences` is non-empty and derived from the JD
-- **Verify:** `experiences` array has ≥1 entry (company + role + bullet_points) for 3/3 sample URLs.
-- **Done when:** a generated CV includes experiences, not just summary + skills.
+- [x] Tighten `build_prompt` in `src/generate.rs` — explicitly require ≥1 experience, name every field, show the exact JSON shape. Consider a stricter system instruction or a one-shot example.
+- [x] Re-run a real `id.jobstreet.com` URL → confirm `experiences` is non-empty and derived from the JD
+- [x] **Bonus fix (uncovered during verify):** bumped `max_tokens` 2048 → 4096. The stricter M9 prompt makes DeepSeek emit longer, more thorough CVs that overran 2048 and arrived truncated mid-JSON (`EOF while parsing`). Documented in `deepseek-prompt-fidelity` skill.
+- **Verify:** `experiences` array has ≥1 entry (company + role + bullet_points) for 3/3 sample URLs. ✅ Verified 2026-06-22 on URLs `87400340`, `92841552`, `92795955` — each returned 3 experiences, all JD-tailored.
+- **Done when:** a generated CV includes experiences, not just summary + skills. ✅
 
 ### M10 — Verify containerized deploy (M8 unverified)
 

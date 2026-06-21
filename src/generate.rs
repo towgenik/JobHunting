@@ -18,16 +18,44 @@ pub async fn process_job(app: &AppState, job_id: Uuid) -> Result<()> {
         "job_description": job_data["description"],
         "master_cv":       master_cv,
     });
-    let task = "Analyze master_cv against job_description. \
-                Extract and rephrase experiences to match the job requirements.";
+    // ponytail: DeepSeek (OpenRouter) silently returned experiences:[] on the loose
+    // wording — fixed M9 by (1) an explicit MUST in TASK, (2) field-by-field schema
+    // with minItems language, (3) a one-shot example. See Architecture §5.5.
+    let task = "Analyze master_cv against job_description and produce a tailored CV draft.\n\
+                \n\
+                HARD REQUIREMENTS:\n\
+                1. `summary` MUST be 2-3 sentences tailored to the job.\n\
+                2. `skills` MUST list 5-15 technical skills drawn from the JD.\n\
+                3. `experiences` MUST contain AT LEAST ONE (≥1) entry — an empty array is a FAILURE.\n\
+                   Build each entry from the master_cv's work history, rephrased and re-ordered to\n\
+                   match the JD. If the master_cv has no explicit work history, synthesize entries\n\
+                   from any project, education, or role-like content it contains — never return [].\n\
+                   Each entry needs `company`, `role`, and 2-5 `bullet_points` that are quantified\n\
+                   and achievement-focused, echoing the JD's required responsibilities.";
     let schema = json!({
-        "summary":     "String: 2-3 sentences tailored to the job.",
-        "skills":      ["Array of strings: technical skills matching JD"],
-        "experiences": [{"company": "String", "role": "String",
-                         "bullet_points": ["achievement-focused, quantified"]}]
+        "summary":     "String (required): 2-3 sentences tailored to the job.",
+        "skills":      "Array of strings (required, 5-15 items): technical skills matching the JD.",
+        "experiences": "Array of objects (REQUIRED, MIN LENGTH 1 — never []). \
+                        Each object has exactly these fields:\n\
+                        - \"company\":       String (the employer name)\n\
+                        - \"role\":          String (the job title)\n\
+                        - \"bullet_points\": Array of strings (2-5 items, quantified achievements\n\
+                                            that echo the JD's responsibilities)"
+    });
+    let example = json!({
+        "summary": "Senior backend engineer with 6+ years building high-throughput Rust services.",
+        "skills": ["Rust", "Tokio", "PostgreSQL", "AWS", "gRPC"],
+        "experiences": [{
+            "company": "Acme Corp",
+            "role":    "Senior Software Engineer",
+            "bullet_points": [
+                "Cut p99 latency 40% by rewriting the billing pipeline in Rust/Tokio.",
+                "Owned the migration from Node.js to Rust across 8 services."
+            ]
+        }]
     });
 
-    let cv = call_llm(app, &build_prompt(task, context, schema)).await?;
+    let cv = call_llm(app, &build_prompt(task, context, schema, example)).await?;
     db::save_cv_draft(&app.db, job_id, cv).await?;
     db::set_status(&app.db, job_id, "pending_approval").await?;
     Ok(())
@@ -57,9 +85,10 @@ async fn scrape_once(url: &str) -> Result<Value> {
     Ok(serde_json::from_slice(&out.stdout)?)
 }
 
-fn build_prompt(task: &str, context: Value, output_schema: Value) -> String {
-    let ctx    = serde_json::to_string_pretty(&context).unwrap_or_default();
-    let schema = serde_json::to_string_pretty(&output_schema).unwrap_or_default();
+fn build_prompt(task: &str, context: Value, output_schema: Value, example: Value) -> String {
+    let ctx     = serde_json::to_string_pretty(&context).unwrap_or_default();
+    let schema  = serde_json::to_string_pretty(&output_schema).unwrap_or_default();
+    let example = serde_json::to_string_pretty(&example).unwrap_or_default();
     format!(
         r###"
 ### CONTEXT
@@ -67,8 +96,13 @@ fn build_prompt(task: &str, context: Value, output_schema: Value) -> String {
 ### TASK
 {task}
 ### OUTPUT FORMAT
-Return ONLY valid JSON matching this exact structure. No markdown, no explanation.
+Return ONLY valid JSON matching this exact structure. No markdown, no explanation, no prose before or after.
 {schema}
+
+### EXAMPLE OUTPUT (shape reference — replace content with JD-derived material)
+{example}
+
+Remember: `experiences` MUST contain at least one entry. Returning `[]` for experiences is a failure.
 "###
     )
 }
@@ -92,7 +126,12 @@ async fn call_llm(app: &AppState, prompt: &str) -> Result<Value> {
     // ponytail: both use the same request body shape; only auth header + response path differ.
     let body = json!({
         "model": app.llm_model,
-        "max_tokens": 2048,   // ponytail: OpenAI newer models use max_completion_tokens; 2048 works on both today
+        // ponytail: was 2048 — the M9 prompt (explicit fields + example + ≥1 experience
+        // requirement) makes DeepSeek emit longer, more thorough CVs that overran 2048
+        // and arrived truncated mid-JSON ("EOF while parsing"). 4096 leaves headroom for
+        // 3 experiences × 5 bullets. OpenAI newer models use max_completion_tokens; this
+        // key works on DeepSeek/OpenRouter today.
+        "max_tokens": 4096,
         "messages": [{"role": "user", "content": prompt}]
     });
 
@@ -141,19 +180,25 @@ async fn call_llm(app: &AppState, prompt: &str) -> Result<Value> {
 mod tests {
     use super::*;
 
-    /// Self-check: `build_prompt` output contains all three required sections.
-    /// If the format changes the LLM stops receiving the context it needs.
+    /// Self-check: `build_prompt` output contains all required sections and the
+    /// M9 anti-regression guard (the "experiences MUST contain at least one"
+    /// line). If the format changes the LLM stops receiving the context it needs.
     #[test]
     fn build_prompt_contains_required_sections() {
         let context = json!({"job_description": "Engineer role", "master_cv": "CV text"});
-        let schema  = json!({"summary": "string", "skills": []});
-        let prompt  = build_prompt("Do the thing", context, schema);
+        let schema  = json!({"summary": "string", "skills": [], "experiences": []});
+        let example = json!({"experiences": [{"company": "X", "role": "Y", "bullet_points": ["z"]}]});
+        let prompt  = build_prompt("Do the thing", context, schema, example);
 
-        assert!(prompt.contains("### CONTEXT"),    "missing CONTEXT section");
-        assert!(prompt.contains("### TASK"),       "missing TASK section");
-        assert!(prompt.contains("OUTPUT FORMAT"),  "missing OUTPUT FORMAT section");
-        assert!(prompt.contains("Do the thing"),   "task text not in prompt");
-        assert!(prompt.contains("job_description"),"context not serialized into prompt");
+        assert!(prompt.contains("### CONTEXT"),     "missing CONTEXT section");
+        assert!(prompt.contains("### TASK"),        "missing TASK section");
+        assert!(prompt.contains("OUTPUT FORMAT"),   "missing OUTPUT FORMAT section");
+        assert!(prompt.contains("EXAMPLE OUTPUT"),  "missing EXAMPLE section");
+        assert!(prompt.contains("Do the thing"),    "task text not in prompt");
+        assert!(prompt.contains("job_description"), "context not serialized into prompt");
+        // M9 guard: the experiences-non-empty reminder must survive in the prompt.
+        assert!(prompt.contains("MUST contain at least one entry"),
+                "missing experiences non-empty reminder — M9 regression");
     }
 
     /// Self-check: mock LLM output has the three required top-level keys.

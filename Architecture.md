@@ -429,20 +429,33 @@ async fn scrape_once(url: &str) -> anyhow::Result<serde_json::Value> {
 ```rust
 use serde_json::Value;
 
-fn build_prompt(task: &str, context: Value, output_schema: Value) -> String {
-    let ctx    = serde_json::to_string_pretty(&context).unwrap_or_default();
-    let schema = serde_json::to_string_pretty(&output_schema).unwrap_or_default();
+// M9: signature gained an `example` param. The one-shot example + the explicit
+// "MUST contain at least one entry" reminder fixed DeepSeek returning experiences:[].
+fn build_prompt(task: &str, context: Value, output_schema: Value, example: Value) -> String {
+    let ctx     = serde_json::to_string_pretty(&context).unwrap_or_default();
+    let schema  = serde_json::to_string_pretty(&output_schema).unwrap_or_default();
+    let example = serde_json::to_string_pretty(&example).unwrap_or_default();
     format!(r###"
 ### CONTEXT
 {ctx}
 ### TASK
 {task}
 ### OUTPUT FORMAT
-Return ONLY valid JSON matching this exact structure. No markdown, no explanation.
+Return ONLY valid JSON matching this exact structure. No markdown, no explanation, no prose before or after.
 {schema}
+
+### EXAMPLE OUTPUT (shape reference — replace content with JD-derived material)
+{example}
+
+Remember: `experiences` MUST contain at least one entry. Returning `[]` for experiences is a failure.
 "###)
 }
 ```
+
+The prompt has four sections: CONTEXT, TASK, OUTPUT FORMAT, and (since M9) an
+EXAMPLE OUTPUT shape reference plus a trailing reminder. The example is a
+fully-populated JSON object — the model replaces its content with JD-derived
+material but keeps the field names and structure.
 
 ### 5.6. CV Generation Pipeline
 
@@ -469,16 +482,26 @@ pub async fn process_job(app: &AppState, job_id: Uuid) -> Result<()> {
         "job_description": job_data["description"],
         "master_cv":       master_cv,
     });
-    let task = "Analyze master_cv against job_description. \
-                Extract and rephrase experiences to match the job requirements.";
+    // M9: tighten the prompt so DeepSeek/OpenRouter cannot skip experiences.
+    // (1) TASK lists HARD REQUIREMENTS including "experiences MUST contain ≥1 entry";
+    // (2) schema spells out each field with min-length language;
+    // (3) a one-shot example shows the exact populated JSON shape.
+    let task = "Analyze master_cv against job_description and produce a tailored CV draft.\n\
+                \n\
+                HARD REQUIREMENTS:\n\
+                1. `summary` MUST be 2-3 sentences tailored to the job.\n\
+                2. `skills` MUST list 5-15 technical skills drawn from the JD.\n\
+                3. `experiences` MUST contain AT LEAST ONE (≥1) entry — an empty array is a FAILURE.\n\
+                   ...";
     let schema = json!({
-        "summary":     "String: 2-3 sentences tailored to the job.",
-        "skills":      ["Array of strings: technical skills matching JD"],
-        "experiences": [{"company": "String", "role": "String",
-                         "bullet_points": ["achievement-focused, quantified"]}]
+        "summary":     "String (required): 2-3 sentences tailored to the job.",
+        "skills":      "Array of strings (required, 5-15 items): technical skills matching the JD.",
+        "experiences": "Array of objects (REQUIRED, MIN LENGTH 1 — never []). \
+                        Each object has exactly these fields: company, role, bullet_points[]"
     });
+    let example = json!({ /* populated shape reference — see src/generate.rs */ });
 
-    let cv = call_llm(app, &build_prompt(task, context, schema)).await?;
+    let cv = call_llm(app, &build_prompt(task, context, schema, example)).await?;
     db::save_cv_draft(&app.db, job_id, cv).await?;   // UPDATE jobs SET cv = ?  (bind cv.to_string())
     db::set_status(&app.db, job_id, "pending_approval").await?;
     Ok(())
@@ -497,12 +520,14 @@ async fn call_llm(app: &AppState, prompt: &str) -> Result<Value> {
             }]
         }));
     }
-    // Real LLM call — Anthropic messages API (M4).
-    // ponytail: Anthropic uses x-api-key header (not Bearer), requires anthropic-version,
-    // messages array format, and response text is at content[0].text (parse as JSON).
+    // Real LLM call — Anthropic messages API (M4) or OpenAI-compatible (M8, used for
+    // OpenRouter/DeepSeek). See src/generate.rs for the dual auth/response-path logic.
+    // ponytail: max_tokens was 2048 — bumped to 4096 in M9 because the stricter prompt
+    // (explicit fields + example + ≥1 experience requirement) makes the model emit longer
+    // CVs that overran 2048 and arrived truncated mid-JSON ("EOF while parsing").
     let body = json!({
         "model": app.llm_model,
-        "max_tokens": 2048,
+        "max_tokens": 4096,
         "messages": [{"role": "user", "content": prompt}]
     });
     let api_resp = app.http

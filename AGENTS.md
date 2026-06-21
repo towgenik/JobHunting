@@ -8,9 +8,9 @@ Two-layer agent repo. Find your role below.
 
 **Any agent may edit this file** — controller or worker. The cap is **4 KB / ~1000 tokens**, checked with `wc -c AGENTS.md` (must report `< 4096`). The point is to keep AGENTS.md loadable in one glance; depth lives in skills.
 
-**When content doesn't fit:** extract it into a skill at `.opencode/skills/<name>/SKILL.md` (controller skills go in the project-root `.opencode/`; worker skills go in the worktree's `.opencode/`), then leave a **one-line pointer** in AGENTS.md's reference map. Prefer tight + pointed over complete + long.
+**When content doesn't fit:** extract it into a skill at `.opencode/skills/<name>/SKILL.md` (controller: project-root `.opencode/`; worker: worktree's `.opencode/`), then leave a **one-line pointer** in the reference map. Prefer tight + pointed over complete + long.
 
-**Edit flow:** workers edit in their worktree and merge via §8.4–§8.5; controller edits on `main`. Conflict resolution (§8.5): prefer the tighter version that points to a skill over the longer version that inlines detail.
+**Edit flow:** workers edit in their worktree and merge via §8.4–§8.5; controller edits on `main`. Conflict resolution (§8.5): prefer a tight skill pointer over inlined detail.
 
 ## If you are the Controller (at project root, `JobHunting/`)
 
@@ -48,13 +48,13 @@ Does **not** own: `main/`, other worktrees, project root, merge decisions.
 |----------|------|
 | Start a milestone (worker) | `.opencode/skills/worktree/SKILL.md` |
 | Dispatch a milestone (controller) | `.opencode/skills/orchestrate/SKILL.md` |
-| System design | `Architecture.md` |
-| Milestone status | `PLANS.md` |
+| System design + milestone status | `Architecture.md`, `PLANS.md` |
 | Sync docs before READY/BLOCKED | `.opencode/skills/sync/SKILL.md` |
 | Scrapling + JobStreet gotchas | `.opencode/skills/scrapling-jobstreet/SKILL.md` |
 | axum + sqlx gotchas | `.opencode/skills/axum-sqlx-gotchas/SKILL.md` |
 | Anthropic API raw HTTP gotchas | `.opencode/skills/anthropic-api-gotchas/SKILL.md` |
 | Docker multi-stage (Rust+Python) gotchas | `.opencode/skills/docker-multistage/SKILL.md` |
+| DeepSeek prompt fidelity | `.opencode/skills/deepseek-prompt-fidelity/SKILL.md` |
 
 ## Hard rules (both roles)
 
