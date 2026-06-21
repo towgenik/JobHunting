@@ -4,7 +4,7 @@
 
 Phase 1: paste a `jobstreet.co.id` job URL → scrape → LLM-tailored CV → user approves/rejects. One site, end-to-end, no scaffolding for the other 42.
 
-**Status:** Prep ✅ complete — container scaffold, CI, self-improvement layer committed + pushed. Runner online, CI green, login bridge-networking confirmed. **Next: dispatch M2 (scrape spike)**.
+**Status:** M2 ✅ complete — scrape spike proven, 3/3 JobStreet URLs return non-empty title + description with container down. **Next: dispatch M3 (backend)**.
 
 Execution order is strict. Each milestone is verifiable before the next starts. Don't skip ahead; an unverified milestone rots.
 
@@ -88,17 +88,17 @@ Foundation so M2–M7 can cook and the result deploys anywhere. Direct edits in 
 ---
 
 ### M2 — Scrape spike (standalone, before any Rust)
-- [ ] `pip install "scrapling[all]" && scrapling install` — fetchers, `extract` CLI, browsers (bare `pip install scrapling` lacks fetchers → `ModuleNotFoundError`)
-- [ ] `docker compose up -d login` — login container boots (root compose); `curl http://localhost:9223/json/version` returns JSON (CDP is the harvest channel, **not** the scrape path)
-- [ ] Log into `jobstreet.co.id` once via the noVNC UI (http://localhost:6901)
-- [ ] `python session.py` — harvests cookies to `session.json` (§2.4); confirm it prints a non-zero cookie count
-- [ ] Probe before wiring selectors: `scrapling extract fetch '<url>' probe.md` — dumps the rendered body, confirms the page loads behind the login and shows what's visible
-- [ ] `scrape.py` from §4 (own browser + harvested cookies), runnable on its own with the login container **stopped** — proves the scrape path is decoupled
-- [ ] Run against **3 real** JobStreet job-detail URLs (different categories if possible)
-- [ ] Inspect `{"title","description"}` JSON on stdout — both fields non-empty for all 3
-- [ ] If a field is empty → tune selectors; if the page is anti-bot-blocked → swap `DynamicFetcher` for `StealthyFetcher` (bypasses Cloudflare out of the box). **Update Architecture §4** to match what works.
-- **Verify:** `python scrape.py <url>` prints valid JSON three times in a row **with the kasmvnc container down**.
-- **Done when:** 3/3 sample URLs return non-empty title + description, container-independent. No Rust touched yet.
+- [x] `pip install "scrapling[all]" && scrapling install` — fetchers, `extract` CLI, browsers (bare `pip install scrapling` lacks fetchers → `ModuleNotFoundError`)
+- [x] `docker compose up -d login` — login container boots (root compose); `curl http://localhost:9223/json/version` returns JSON (CDP is the harvest channel, **not** the scrape path)
+- [x] Log into `id.jobstreet.com` once via the noVNC UI (http://localhost:6901) — note: jobstreet.co.id redirects here; cookies land on .jobstreet.com
+- [x] `python session.py` — harvests cookies to `session.json` (§2.4); printed 20 cookies (SESSION_HOST fixed to "jobstreet.com" — see Architecture §4)
+- [x] Probe before wiring selectors: confirmed `[data-automation="job-detail-title"]` and `[data-automation="jobAdDetails"]` work; spec selectors (jobDescriptionText/jobDescription) do not exist on live pages
+- [x] `scrape.py` from §4 (own browser + harvested cookies), runnable on its own with the login container **stopped** — proves the scrape path is decoupled
+- [x] Run against **3 real** JobStreet job-detail URLs (different categories: tech/management, hospitality, logistics)
+- [x] Inspect `{"title","description"}` JSON on stdout — both fields non-empty for all 3
+- [x] Selectors tuned: swapped jobDescriptionText→jobAdDetails; fixed scrapling API (css() not css_first()); **Architecture §4 updated** to match what works.
+- **Verify:** `python scrape.py <url>` prints valid JSON three times in a row **with the kasmvnc container down**. ✅ Done.
+- **Done when:** 3/3 sample URLs return non-empty title + description, container-independent. No Rust touched yet. ✅
 - **Why first:** site HTML + the harvested session are the only pieces we don't control. Don't wire a scraper you haven't seen print JSON.
 
 ### M3 — Full backend in one pass (DB + templates + pipeline + mock LLM)

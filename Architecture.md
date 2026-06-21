@@ -143,7 +143,8 @@ The KasmVNC container exists for one thing: a **real human logs into the job boa
    ```bash
    docker compose up -d login    # root compose is canonical (§9)
    # noVNC UI → http://localhost:6901   (password from VNC_PW, default admin1)
-   # …log into jobstreet.co.id in the noVNC browser…
+   # …log into id.jobstreet.com in the noVNC browser…
+   # (jobstreet.co.id redirects there; cookies land on .jobstreet.com)
    python session.py        # harvests cookies → ~/.local/share/job-agent/session.json
    ```
    The login itself persists in the named volume `chrome_profile` across restarts and rebuilds; `session.py` just reads the current cookies out over CDP.
@@ -191,11 +192,17 @@ INSERT INTO settings (id, master_cv) VALUES (1, '');
 
 **Phase 1 scope:** a plain CLI script invoked once per job with a single `jobstreet.co.id` URL. Not a service, not a crawler — Rust spawns it as a subprocess: `python scrape.py <url>`. It prints `{"title", "description"}` as JSON on stdout; any failure exits non-zero with a traceback on stderr, which Rust logs. Non-JobStreet URLs should be rejected by the caller (Rust) before reaching the scraper; the scraper assumes a JobStreet job-detail page. The KasmVNC container is a **login terminal only** — driving page loads through the interactive VNC browser is slow and inconsistent. Instead `session.py` harvests the logged-in cookies once over CDP (§2.4), and `scrape.py` runs its own headless browser seeded with those cookies.
 
-Selectors below are tuned for `jobstreet.co.id` job-detail pages. They will need adjustment per site in Phase 2; do not generalize prematurely.
+**Domain note:** `jobstreet.co.id` redirects to `id.jobstreet.com`. Cookies are set on `.jobstreet.com` (parent domain) and `id.jobstreet.com`. Use `SESSION_HOST=jobstreet.com` (the parent) so the `HOST in c["domain"]` filter catches both. Verified 2026-06-21.
+
+Selectors below are tuned for `id.jobstreet.com` job-detail pages (probed 2026-06-21). They will need adjustment per site in Phase 2; do not generalize prematurely.
+
+**Scrapling API note:** `DynamicFetcher.async_fetch()` returns a `Response` (extends `Selector`). Use `page.css(selector)` which returns a `Selectors` list — index `[0]` for the first element. `element.text` is the direct text node; `element.get_all_text()` concatenates all child text. The `css_first()` method does **not** exist in scrapling 0.4.x — do not use it.
 
 **`session.py`** — harvest the login session from the KasmVNC Chrome over CDP. Run after logging in via noVNC; re-run when cookies expire. The container can be down afterwards.
 ```python
-# Harvests jobstreet.co.id login cookies from the KasmVNC Chrome (over CDP) → session.json.
+# Harvests jobstreet.com login cookies from the KasmVNC Chrome (over CDP) → session.json.
+# NOTE: jobstreet.co.id redirects to id.jobstreet.com; cookies live under .jobstreet.com
+# and id.jobstreet.com. SESSION_HOST default is "jobstreet.com" to catch both.
 # This is the ONLY use of the container's CDP port; scraping never drives the VNC browser.
 # ponytail: raw playwright connect_over_cdp — scrapling already depends on playwright
 import json, os
@@ -203,7 +210,9 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 CDP_URL = os.environ.get("CDP_URL", "http://localhost:9223")
-HOST    = os.environ.get("SESSION_HOST", "jobstreet.co.id")
+# jobstreet.co.id redirects to id.jobstreet.com; cookies live under .jobstreet.com
+# and id.jobstreet.com. Use "jobstreet.com" to harvest both via domain substring match.
+HOST    = os.environ.get("SESSION_HOST", "jobstreet.com")
 OUT     = Path(os.environ.get("SESSION_FILE",
              str(Path.home() / ".local" / "share" / "job-agent" / "session.json")))
 
@@ -224,6 +233,13 @@ print(f"wrote {len(cookies)} cookies → {OUT}")
 # ponytail: Phase 1 — DynamicFetcher + hardcoded jobstreet selectors. If anti-bot bites,
 # swap to StealthyFetcher (bypasses Cloudflare out of the box). For Phase 2 site churn, use
 # adaptive=True / auto_save so Scrapling relocates selectors when pages change.
+#
+# Selector notes (probed 2026-06-21 against id.jobstreet.com):
+#   title:       [data-automation="job-detail-title"] → .text (direct text node)
+#   title fallback: h1 → .get_all_text()
+#   description: [data-automation="jobAdDetails"]    → .get_all_text()
+#   NOTE: jobDescriptionText / jobDescription do NOT exist on id.jobstreet.com pages.
+#         The actual description container is jobAdDetails.
 import os, sys, json, asyncio
 from pathlib import Path
 from scrapling.fetchers import DynamicFetcher
@@ -242,14 +258,22 @@ async def scrape(url: str) -> dict:
     # Own headless browser; the harvested cookies carry the logged-in session.
     page = await DynamicFetcher.async_fetch(url, cookies=load_cookies(),
                                             network_idle=True, headless=True)
-    # JobStreet job-detail selectors. title first; fall back to h1 if the
-    # data-automation attribute is renamed.
-    title = (page.css_first('[data-automation="job-detail-title"]::text')
-             or page.css_first('h1::text') or "")
-    desc  = (page.css_first('[data-automation="jobDescriptionText"]')
-             or page.css_first('[data-automation="jobDescription"]'))
-    return {"title": title.strip(),
-            "description": desc.text.strip() if desc else ""}
+
+    # Title: [data-automation="job-detail-title"] .text; fall back to h1
+    # Scrapling's css() returns a Selectors list — index [0] for first element.
+    title_els = page.css('[data-automation="job-detail-title"]')
+    if title_els:
+        title = str(title_els[0].text).strip()
+    else:
+        h1_els = page.css('h1')
+        title = str(h1_els[0].get_all_text()).strip() if h1_els else ""
+
+    # Description: [data-automation="jobAdDetails"] (NOT jobDescriptionText/jobDescription
+    # — those selectors don't exist on id.jobstreet.com job-detail pages).
+    desc_els = page.css('[data-automation="jobAdDetails"]')
+    description = str(desc_els[0].get_all_text(separator='\n', strip=True)).strip() if desc_els else ""
+
+    return {"title": title, "description": description}
 
 
 if __name__ == "__main__":

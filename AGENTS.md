@@ -1,8 +1,8 @@
 # AGENTS.md
 
-**JobHunting** — Phase 1: scrape `jobstreet.co.id` job URLs, generate tailored CVs via LLM, queue for user approval. Single-user local tool. Rust + axum + HTMX + SQLite. Full design in `Architecture.md`; milestones in `PLANS.md`.
+**JobHunting** — Phase 1: scrape `jobstreet.co.id` job URLs → tailored CVs via LLM → user approves. Single-user local tool. Rust + axum + HTMX + SQLite. Design in `Architecture.md`; milestones in `PLANS.md`.
 
-Two-layer agent repo. Find your role below, follow its action card.
+Two-layer agent repo. Find your role below.
 
 ## Modification charter
 
@@ -10,7 +10,7 @@ Two-layer agent repo. Find your role below, follow its action card.
 
 **When content doesn't fit:** extract it into a skill at `.opencode/skills/<name>/SKILL.md` (controller skills go in the project-root `.opencode/`; worker skills go in the worktree's `.opencode/`), then leave a **one-line pointer** in AGENTS.md's reference map. Prefer tight + pointed over complete + long.
 
-**Edit flow:** workers edit in their worktree and merge via the normal `Architecture.md` §8.4–§8.5 flow; controller edits on `main` directly. Conflict resolution (`Architecture.md` §8.5): prefer the tighter version that points to a skill over the longer version that inlines detail.
+**Edit flow:** workers edit in their worktree and merge via §8.4–§8.5; controller edits on `main`. Conflict resolution (§8.5): prefer the tighter version that points to a skill over the longer version that inlines detail.
 
 ## If you are the Controller (at project root, `JobHunting/`)
 
@@ -51,6 +51,7 @@ Does **not** own: `main/`, other worktrees, project root, merge decisions.
 | Understand the system | `Architecture.md` |
 | Milestone status | `PLANS.md` |
 | Sync docs + create skills (before READY/BLOCKED) | `.opencode/skills/sync/SKILL.md` |
+| Scrapling API + JobStreet domain/selector gotchas | `.opencode/skills/scrapling-jobstreet/SKILL.md` |
 
 ## Hard rules (both roles)
 
@@ -61,7 +62,7 @@ Does **not** own: `main/`, other worktrees, project root, merge decisions.
 - **Never edit another agent's workspace** — controller skips in-flight worktrees; workers skip other worktrees and `main/`.
 - **Never push to a remote** without explicit user instruction.
 - **Never edit `.env`** — user's config.
-- **Never commit secrets or build trash.** `.gitignore` covers `/target`, `*.db*`, `.env*`, `*.pem`, `*.key`, `*.p12`, `secrets/`, `.venv/`, `__pycache__/`, `*.log`. New artifact type → extend `.gitignore` in the same commit. Pre-READY check: `git ls-files | grep -iE '\.(env|pem|key|p12)$|secrets/|\.db[^/]*$'` must be empty. If a secret slipped in, escalate to user — never scrub history silently.
+- **Never commit secrets or build trash.** `.gitignore` covers `/target`, `*.db*`, `.env*`, `*.pem`, `*.key`, `*.p12`, `secrets/`, `.venv/`, `__pycache__/`, `*.log`. New artifact type → extend `.gitignore` in the same commit. Pre-READY check: `git ls-files | grep -iE '\.(env|pem|key|p12)$|secrets/|\.db[^/]*$'` must be empty. Escalate to user if a secret slipped in — never scrub history silently.
 
 ## Self-check before commit (any agent)
 
