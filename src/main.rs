@@ -23,26 +23,32 @@ use templates::{
 
 #[derive(Clone)]
 pub struct AppState {
-    pub db:           SqlitePool,
-    pub http:         reqwest::Client,
-    pub llm_endpoint: String,
-    pub llm_api_key:  String,
-    pub llm_model:    String,
-    pub mock_llm:     bool,
+    pub db:            SqlitePool,
+    pub http:          reqwest::Client,
+    pub llm_endpoint:  String,
+    pub llm_api_key:   String,
+    pub llm_model:     String,
+    pub mock_llm:      bool,
+    pub openai_compat: bool,   // true = OpenAI-style (Bearer + choices[0]); false = Anthropic
 }
 
 impl AppState {
     pub fn from_env(db: SqlitePool) -> Self {
+        let endpoint = std::env::var("LLM_ENDPOINT")
+            .unwrap_or_else(|_| "https://api.anthropic.com/v1/messages".into());
+        // Auto-detect: explicit LLM_PROVIDER env wins; otherwise infer from endpoint URL.
+        let openai_compat = std::env::var("LLM_PROVIDER")
+            .map(|v| v.to_lowercase() != "anthropic")
+            .unwrap_or_else(|_| !endpoint.contains("anthropic.com"));
         Self {
             db,
-            http:         reqwest::Client::new(),
-            llm_endpoint: std::env::var("LLM_ENDPOINT")
-                              .unwrap_or_else(|_| "https://api.anthropic.com/v1/messages".into()),
-            llm_api_key:  std::env::var("LLM_API_KEY")
-                              .unwrap_or_else(|_| "".into()),
-            llm_model:    std::env::var("LLM_MODEL")
-                              .unwrap_or_else(|_| "claude-sonnet-4-6".into()),
-            mock_llm:     std::env::var("LLM_MOCK").is_ok(),
+            http:          reqwest::Client::new(),
+            llm_api_key:   std::env::var("LLM_API_KEY").unwrap_or_default(),
+            llm_model:     std::env::var("LLM_MODEL")
+                               .unwrap_or_else(|_| "claude-sonnet-4-6".into()),
+            mock_llm:      std::env::var("LLM_MOCK").is_ok(),
+            openai_compat,
+            llm_endpoint:  endpoint,
         }
     }
 }

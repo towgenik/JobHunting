@@ -87,25 +87,25 @@ async fn call_llm(app: &AppState, prompt: &str) -> Result<Value> {
         }));
     }
 
-    // Real LLM call — Anthropic messages API format.
-    // ponytail: Anthropic uses x-api-key header (not Bearer), anthropic-version header,
-    // and messages array format. Response text is at content[0].text; parse as JSON
-    // because the prompt explicitly requests JSON output.
+    // Real LLM call — supports Anthropic and OpenAI-compatible APIs.
+    // Auto-detected from LLM_ENDPOINT; override with LLM_PROVIDER=anthropic|openai.
+    // ponytail: both use the same request body shape; only auth header + response path differ.
     let body = json!({
         "model": app.llm_model,
-        "max_tokens": 2048,
+        "max_tokens": 2048,   // ponytail: OpenAI newer models use max_completion_tokens; 2048 works on both today
         "messages": [{"role": "user", "content": prompt}]
     });
 
-    let api_resp = app
-        .http
-        .post(&app.llm_endpoint)
-        .header("x-api-key", &app.llm_api_key)
-        .header("anthropic-version", "2023-06-01")
-        .json(&body)
-        .send()
-        .await?;
+    let req = app.http.post(&app.llm_endpoint).json(&body);
+    let req = if app.openai_compat {
+        req.bearer_auth(&app.llm_api_key)
+    } else {
+        // Anthropic: x-api-key header + required anthropic-version header
+        req.header("x-api-key", &app.llm_api_key)
+           .header("anthropic-version", "2023-06-01")
+    };
 
+    let api_resp = req.send().await?;
     let status = api_resp.status();
     let resp: Value = api_resp.json().await?;
 
@@ -120,11 +120,16 @@ async fn call_llm(app: &AppState, prompt: &str) -> Result<Value> {
         );
     }
 
-    // Extract response["content"][0]["text"] and parse it as JSON (prompt asks for JSON output)
-    let text = resp
-        .pointer("/content/0/text")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("LLM response missing content[0].text: {resp}"))?;
+    // Extract the response text — path differs by provider.
+    let text = if app.openai_compat {
+        resp.pointer("/choices/0/message/content")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("LLM response missing choices[0].message.content: {resp}"))?
+    } else {
+        resp.pointer("/content/0/text")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("LLM response missing content[0].text: {resp}"))?
+    };
 
     let cv: Value = serde_json::from_str(text)
         .map_err(|e| anyhow::anyhow!("LLM returned non-JSON text: {e}\nraw: {text}"))?;
@@ -161,12 +166,13 @@ mod tests {
             .await
             .expect("in-memory db");
         let app = crate::AppState {
-            db:           pool,
-            http:         reqwest::Client::new(),
-            llm_endpoint: String::new(),
-            llm_api_key:  String::new(),
-            llm_model:    String::new(),
-            mock_llm:     true,
+            db:            pool,
+            http:          reqwest::Client::new(),
+            llm_endpoint:  String::new(),
+            llm_api_key:   String::new(),
+            llm_model:     String::new(),
+            mock_llm:      true,
+            openai_compat: false,
         };
         let result = call_llm(&app, "ignored prompt").await.expect("mock must not fail");
         assert!(result["summary"].is_string(),   "mock missing 'summary'");
