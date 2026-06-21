@@ -4,7 +4,7 @@
 
 Phase 1: paste an `id.jobstreet.com` job URL → scrape → LLM-tailored CV → user approves/rejects. One site, end-to-end, no scaffolding for the other 42.
 
-**Status:** M3 ✅ complete — full happy path proven with LLM_MOCK=true. **Next: dispatch M4 (real LLM)**.
+**Status:** M4 ✅ complete — real LLM call implemented (Anthropic messages API). **Next: dispatch M5 (review + decision)**.
 
 Execution order is strict. Each milestone is verifiable before the next starts. Don't skip ahead; an unverified milestone rots.
 
@@ -113,8 +113,8 @@ Foundation so M2–M7 can cook and the result deploys anywhere. Direct edits in 
 - **Done when:** full happy path works offline against mock LLM. Templates, DB, and pipeline all proven at once. ✅
 
 ### M4 — Real LLM call
-- [ ] Implement non-mock branch of `call_llm` against `LLM_ENDPOINT`
-- [ ] Confirm JSON shape matches the §5.6 schema (summary / skills / experiences)
+- [x] Implement non-mock branch of `call_llm` against `LLM_ENDPOINT`
+- [x] Confirm JSON shape matches the §5.6 schema (summary / skills / experiences)
 - **Verify:** unset `LLM_MOCK`, repeat M3's flow → CV content is clearly derived from the job description, not the mock.
 - **Done when:** same flow as M3 produces a real tailored CV.
 

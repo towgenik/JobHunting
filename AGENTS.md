@@ -48,10 +48,12 @@ Does **not** own: `main/`, other worktrees, project root, merge decisions.
 |----------|------|
 | Start a milestone (worker) | `.opencode/skills/worktree/SKILL.md` |
 | Dispatch a milestone (controller) | `.opencode/skills/orchestrate/SKILL.md` |
-| Understand the system | `Architecture.md` |
+| System design | `Architecture.md` |
 | Milestone status | `PLANS.md` |
-| Sync docs + create skills (before READY/BLOCKED) | `.opencode/skills/sync/SKILL.md` |
-| Scrapling API + JobStreet domain/selector gotchas | `.opencode/skills/scrapling-jobstreet/SKILL.md` |
+| Sync docs before READY/BLOCKED | `.opencode/skills/sync/SKILL.md` |
+| Scrapling + JobStreet gotchas | `.opencode/skills/scrapling-jobstreet/SKILL.md` |
+| axum + sqlx gotchas | `.opencode/skills/axum-sqlx-gotchas/SKILL.md` |
+| Anthropic API raw HTTP gotchas | `.opencode/skills/anthropic-api-gotchas/SKILL.md` |
 
 ## Hard rules (both roles)
 
@@ -62,7 +64,7 @@ Does **not** own: `main/`, other worktrees, project root, merge decisions.
 - **Never edit another agent's workspace** — controller skips in-flight worktrees; workers skip other worktrees and `main/`.
 - **Never push to a remote** without explicit user instruction.
 - **Never edit `.env`** — user's config.
-- **Never commit secrets or build trash.** `.gitignore` covers `/target`, `*.db*`, `.env*`, `*.pem`, `*.key`, `*.p12`, `secrets/`, `.venv/`, `__pycache__/`, `*.log`. New artifact type → extend `.gitignore` in the same commit. Pre-READY check: `git ls-files | grep -iE '\.(env|pem|key|p12)$|secrets/|\.db[^/]*$'` must be empty. Escalate to user if a secret slipped in — never scrub history silently.
+- **Never commit secrets or build trash.** `.gitignore` covers `/target`, `*.db*`, `.env*`, `*.pem`, `*.key`, `*.p12`, `secrets/`, `.venv/`. Pre-READY: `git ls-files | grep -iE '\.(env|pem|key|p12)$|secrets/|\.db'` must be empty.
 
 ## Self-check before commit (any agent)
 

@@ -495,14 +495,31 @@ async fn call_llm(app: &AppState, prompt: &str) -> Result<Value> {
             }]
         }));
     }
-    // Real LLM call via LLM_ENDPOINT / LLM_API_KEY / LLM_MODEL
-    let resp = app.http
+    // Real LLM call — Anthropic messages API (M4).
+    // ponytail: Anthropic uses x-api-key header (not Bearer), requires anthropic-version,
+    // messages array format, and response text is at content[0].text (parse as JSON).
+    let body = json!({
+        "model": app.llm_model,
+        "max_tokens": 2048,
+        "messages": [{"role": "user", "content": prompt}]
+    });
+    let api_resp = app.http
         .post(&app.llm_endpoint)
-        .bearer_auth(&app.llm_api_key)
-        .json(&json!({ "model": app.llm_model, "prompt": prompt }))
-        .send().await?
-        .json::<Value>().await?;
-    Ok(resp)
+        .header("x-api-key", &app.llm_api_key)
+        .header("anthropic-version", "2023-06-01")
+        .json(&body)
+        .send().await?;
+    let status = api_resp.status();
+    let resp: Value = api_resp.json().await?;
+    if !status.is_success() {
+        anyhow::bail!("LLM API error {}: {}", status,
+            resp.pointer("/error/message").and_then(|m| m.as_str()).unwrap_or("unknown"));
+    }
+    let text = resp.pointer("/content/0/text")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("LLM response missing content[0].text: {resp}"))?;
+    Ok(serde_json::from_str(text)
+        .map_err(|e| anyhow::anyhow!("LLM returned non-JSON: {e}\nraw: {text}"))?)
 }
 ```
 

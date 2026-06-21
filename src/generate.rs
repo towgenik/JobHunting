@@ -73,7 +73,7 @@ Return ONLY valid JSON matching this exact structure. No markdown, no explanatio
     )
 }
 
-async fn call_llm(app: &AppState, _prompt: &str) -> Result<Value> {
+async fn call_llm(app: &AppState, prompt: &str) -> Result<Value> {
     if app.mock_llm {
         // ponytail: mock returns valid structure so full UI flow works offline
         return Ok(json!({
@@ -86,15 +86,48 @@ async fn call_llm(app: &AppState, _prompt: &str) -> Result<Value> {
             }]
         }));
     }
-    // Real LLM call via LLM_ENDPOINT / LLM_API_KEY / LLM_MODEL (M4)
-    let resp = app
+
+    // Real LLM call — Anthropic messages API format.
+    // ponytail: Anthropic uses x-api-key header (not Bearer), anthropic-version header,
+    // and messages array format. Response text is at content[0].text; parse as JSON
+    // because the prompt explicitly requests JSON output.
+    let body = json!({
+        "model": app.llm_model,
+        "max_tokens": 2048,
+        "messages": [{"role": "user", "content": prompt}]
+    });
+
+    let api_resp = app
         .http
         .post(&app.llm_endpoint)
-        .bearer_auth(&app.llm_api_key)
-        .json(&json!({ "model": app.llm_model, "prompt": _prompt }))
+        .header("x-api-key", &app.llm_api_key)
+        .header("anthropic-version", "2023-06-01")
+        .json(&body)
         .send()
-        .await?
-        .json::<Value>()
         .await?;
-    Ok(resp)
+
+    let status = api_resp.status();
+    let resp: Value = api_resp.json().await?;
+
+    if !status.is_success() {
+        anyhow::bail!(
+            "LLM API error {}: {}",
+            status,
+            resp.get("error")
+                .and_then(|e| e.get("message"))
+                .and_then(|m| m.as_str())
+                .unwrap_or("unknown error")
+        );
+    }
+
+    // Extract response["content"][0]["text"] and parse it as JSON (prompt asks for JSON output)
+    let text = resp
+        .pointer("/content/0/text")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("LLM response missing content[0].text: {resp}"))?;
+
+    let cv: Value = serde_json::from_str(text)
+        .map_err(|e| anyhow::anyhow!("LLM returned non-JSON text: {e}\nraw: {text}"))?;
+
+    Ok(cv)
 }
