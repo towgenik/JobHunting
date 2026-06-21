@@ -7,19 +7,19 @@
 # Build context: repo root (docker build .)
 
 # ── Stage 1: Rust builder ────────────────────────────────────────────────────
-# Note: rust:1.82-slim is too old — current transitive deps (idna_adapter,
-# home) require the edition2024 cargo feature stabilized in rustc 1.85.
-# 1.95 gives headroom; bump intentionally when upgrading.
-FROM rust:1.95-slim AS builder
+# alpine = musl libc -> the release binary is STATIC, so it runs on ANY runtime
+# image regardless of glibc version. Previously rust:*-slim (Debian trixie,
+# glibc 2.41) produced a binary the ubuntu:22.04 runtime (glibc 2.35) could not
+# load ("GLIBC_2.39 not found"). Static musl kills that whole class of bug —
+# see docker-multistage skill (M10 gotcha).
+# Note: rust 1.85+ is required (edition2024 cargo feature, needed by transitive
+# deps idna_adapter/home); 1.95 gives headroom. rust:1.95-alpine ships musl +
+# the C toolchain libsqlite3-sys's bundled build needs.
+FROM rust:1.95-alpine AS builder
 
 WORKDIR /build
 
-# Install build dependencies (OpenSSL / pkg-config needed by reqwest)
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        pkg-config \
-        libssl-dev \
-    && rm -rf /var/lib/apt/lists/*
+# No openssl/pkg-config: reqwest uses rustls (pure-Rust TLS, see Cargo.toml).
 
 # NOTE: sqlx-cli is NOT installed here. Migrations are embedded into the Rust
 # binary at build time via `sqlx::migrate!("./migrations")` in src/main.rs and

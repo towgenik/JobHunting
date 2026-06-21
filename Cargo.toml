@@ -7,7 +7,10 @@ edition = "2021"
 axum        = { version = "0.7", features = ["macros", "form"] }
 tokio       = { version = "1",   features = ["full"] }
 sqlx        = { version = "0.7", features = ["runtime-tokio", "sqlite", "uuid", "migrate"] }
-reqwest     = { version = "0.12", features = ["json"] }
+# ponytail: default-features=false drops native-tls (openssl). rustls-tls is
+# pure-Rust TLS — no system openssl — and pairs with the alpine/musl builder in
+# Dockerfile to produce a STATIC binary that runs on any runtime glibc.
+reqwest     = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "charset", "http2"] }
 serde       = { version = "1",   features = ["derive"] }
 serde_json  = "1"
 uuid        = { version = "1",   features = ["v4", "serde"] }
