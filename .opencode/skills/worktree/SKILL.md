@@ -103,6 +103,11 @@ and stop. The controller will escalate or send you back with guidance.
 - [ ] No edits leaked outside your worktree (`cd ../main && git status`
       shows nothing caused by you)
 - [ ] PLANS.md checkboxes + Status line updated in your worktree
+- [ ] No secrets tracked:
+      ```bash
+      git ls-files | grep -iE '\.(env|pem|key|p12)$|secrets/|\.db[^/]*$'
+      ```
+      Output must be empty. If a secret slipped in, escalate to user — never scrub history silently.
 
 If any unchecked, **do not signal READY**.
 

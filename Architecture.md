@@ -767,6 +767,7 @@ When two worker branches diverge (e.g. parallel workers both updated PLANS.md), 
 | Code outside the milestone's scope | `main` wins; flag as scope creep to user |
 | `PLANS.md` | Union both sides: checkboxes stay checked if either side checked them; keep more recent Status line |
 | `.opencode/skills/` | Prefer the more specific/refined version; if meaningful divergence, reconcile manually and document in commit message |
+| `.gitignore` | Union both sides — never lose an ignore pattern; if one side removed a pattern, keep it and investigate why |
 
 ### 8.6 Shared vs per-worktree state
 

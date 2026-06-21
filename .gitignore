@@ -1,3 +1,26 @@
+# Rust build artifacts
 /target
+
+# SQLite (local dev DB; per-worktree, disposable)
 *.db*
+
+# Python (scraper runtime: scrape.py + deps)
+__pycache__/
+*.pyc
+.venv/
+
+# Secrets & local config
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+secrets/
+
+# Logs
+*.log
+
+# OS junk
+.DS_Store
+Thumbs.db

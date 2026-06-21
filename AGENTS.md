@@ -62,9 +62,11 @@ Does **not** own: `main/`, other worktrees, project root, merge decisions.
 - **Never edit another agent's workspace** — controller skips in-flight worktrees; workers skip other worktrees and `main/`.
 - **Never push to a remote** without explicit user instruction.
 - **Never edit `.env`** — user's config.
+- **Never commit secrets or build trash.** `.gitignore` covers `/target`, `*.db*`, `.env*`, `*.pem`, `*.key`, `*.p12`, `secrets/`, `.venv/`, `__pycache__/`, `*.log`. New artifact type → extend `.gitignore` in the same commit. Pre-READY check: `git ls-files | grep -iE '\.(env|pem|key|p12)$|secrets/|\.db[^/]*$'` must be empty. If a secret slipped in, escalate to user — never scrub history silently.
 
 ## Self-check before commit (any agent)
 
 ```bash
 test $(wc -c < AGENTS.md) -lt 4096 && echo OK || echo "AGENTS.md too fat — extract to a skill"
+git ls-files | grep -iE '\.(env|pem|key|p12)$|secrets/|\.db[^/]*$' && echo "FAIL: secrets tracked" || echo OK
 ```
