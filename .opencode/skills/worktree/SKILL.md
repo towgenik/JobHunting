@@ -102,7 +102,7 @@ and stop. The controller will escalate or send you back with guidance.
 - [ ] `git status` clean
 - [ ] No edits leaked outside your worktree (`cd ../main && git status`
       shows nothing caused by you)
-- [ ] PLANS.md checkboxes + Status line updated in your worktree
+- [ ] Ran `.opencode/skills/sync/SKILL.md` — PLANS.md updated, Architecture.md corrected where spec drifted, lessons captured as skills
 - [ ] No secrets tracked:
       ```bash
       git ls-files | grep -iE '\.(env|pem|key|p12)$|secrets/|\.db[^/]*$'

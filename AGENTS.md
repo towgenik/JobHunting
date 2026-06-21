@@ -50,8 +50,7 @@ Does **not** own: `main/`, other worktrees, project root, merge decisions.
 | Dispatch a milestone (controller) | `.opencode/skills/orchestrate/SKILL.md` |
 | Understand the system | `Architecture.md` |
 | Milestone status | `PLANS.md` |
-| Dev cycle (request → response) | `Architecture.md` §7 |
-| Multi-agent workspace rules | `Architecture.md` §8 |
+| Sync docs + create skills (before READY/BLOCKED) | `.opencode/skills/sync/SKILL.md` |
 
 ## Hard rules (both roles)
 
