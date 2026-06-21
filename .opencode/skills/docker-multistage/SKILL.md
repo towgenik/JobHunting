@@ -56,7 +56,7 @@ RUN cargo install sqlx-cli --no-default-features --features sqlite
 COPY --from=builder /usr/local/cargo/bin/sqlx /usr/local/bin/sqlx
 ```
 
-**ponytail:** An alternative is to embed migrations via `sqlx::migrate!()` macro in the Rust binary itself, which runs them on startup. That eliminates the sqlx-cli dependency entirely. Switch to that if the sqlx-cli binary causes issues (glibc version mismatch between builder and runtime).
+**ponytail:** ✅ Adopted in M10 — the project now embeds migrations via `sqlx::migrate!("./migrations")` in the Rust binary (runs on startup). sqlx-cli was removed from both stages. This also dodges the recurring build breakage where `cargo install sqlx-cli` pulls a crate needing a newer rustc than the image ships.
 
 ---
 
@@ -68,3 +68,65 @@ COPY --from=builder /usr/local/cargo/bin/sqlx /usr/local/bin/sqlx
 ```
 target/
 ```
+
+---
+
+## Gotcha 6: glibc mismatch between builder and runtime stages
+
+**Problem:** The container starts, then the binary fails immediately:
+```
+/app/job-agent: /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.39' not found
+```
+
+**Root cause:** The builder and runtime stages use *different distros*, so different glibc versions. The binary is linked against the builder's glibc and won't load on an older runtime glibc. Concretely (M10): `rust:1.95-slim` is Debian trixie (glibc **2.41**); `ubuntu:22.04` is glibc **2.35**. The compiled binary needed symbols from 2.39+.
+
+**Fix:** Match builder and runtime to the **same distro/version** so glibc can never drift. The boring choice that works: `rust:1.95-slim-bookworm` builder + `debian:bookworm` runtime (both glibc 2.36).
+- Don't "fix" this by going musl-static (alpine builder) unless you've verified every native dep — see Gotcha 7. A glibc-matched pair is simpler and is what bare-metal dev already runs.
+- Watch the pip side-effect of a newer Debian: bookworm/trixie enforce PEP 668, so `pip3 install` needs `--break-system-packages` (fine for a single-user container). The `t64` package renames (`libasound2`→`libasound2t64`, `libcups2`→`libcups2t64`) only bite trixie, not bookworm.
+
+---
+
+## Gotcha 7: `create_if_missing` defaults false — fresh-volume deploy panics SQLITE_CANTOPEN
+
+**Problem:** `docker compose up` on a fresh volume (fresh VM, empty `/data`):
+```
+thread 'main' panicked at src/main.rs: failed to connect to SQLite:
+Database(SqliteError { code: 14, message: "unable to open database file" })
+```
+But the same binary works fine on bare metal, and works in-container once `/data/jobagent.db` already exists.
+
+**Root cause:** `SqlitePool::connect(url)` uses default `SqliteConnectOptions`, where **`create_if_missing` is false**. So sqlx can *open* an existing db but cannot *create* one. Bare metal never hit this because `jobagent.db` was already there from earlier setup — the app had never once bootstrapped its own db. A truly fresh deploy (the whole point of M8/M10) panics on first connect, before migrations can even run.
+
+**Fix:** Parse the URL into options and enable create explicitly:
+```rust
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePool};
+let pool = SqlitePool::connect_with(
+    database_url.as_str()
+        .parse::<SqliteConnectOptions>()
+        .expect("bad DATABASE_URL")
+        .create_if_missing(true),
+).await.expect("failed to connect to SQLite");
+```
+(`SqliteConnectOptions` has no `From<&str>` in sqlx 0.7 — use `FromStr` via `.parse::<>()`, not `::from_url` or `::from`.)
+
+**Red herring to skip:** building a **musl-static binary** (alpine builder) to "make glibc a non-issue" (see Gotcha 6) instead breaks bundled-SQLite file access entirely — every file-DB URL panics CANTOPEN; only `sqlite::memory:` works. Don't go down this path for a sqlx-sqlite app. Match the glibc pair (Gotcha 6) and fix the real default (this gotcha) instead.
+
+---
+
+## Gotcha 8: stale container names + host ports block `compose up`
+
+**Problem:** `docker compose up` fails at container creation with either:
+```
+Conflict. The container name "/jobhunting-login" is already in use ...
+```
+or
+```
+failed to bind host port 0.0.0.0:3000/tcp: address already in use
+```
+
+**Root cause:** A previous smoke test / bare-metal run left a stopped container holding the fixed `container_name`, or a bare-metal `cargo run` is still bound to the host port compose wants. Compose's fixed `container_name` collides across compose projects too (e.g. a `main/` smoke test vs an `m10-docker/` worktree run).
+
+**Fix:** Before the clean bring-up:
+- `docker rm <name>` the stale stopped container (compose will recreate it).
+- `kill` the leftover host process holding the port (`lsof -i :3000` / `ss -tlnp | grep :3000`).
+Consider whether `container_name:` is even needed — without it, compose names per-project and won't collide.

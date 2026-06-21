@@ -24,7 +24,7 @@ This document outlines the complete architecture for an autonomous, AI-driven jo
 | Live status | HTMX polling | `hx-trigger="every 2s"` swaps the card when the job finishes; no SSE, no extra deps |
 | Scraper | Python + Scrapling | Launches its own headless browser seeded with cookies harvested from the login terminal (§2.4); invoked as a subprocess, JSON on stdout |
 | Login terminal | KasmVNC Chrome container | A real human logs in here; `session.py` harvests the session over CDP. Not used for scraping (too slow/inconsistent) — no host Brave, portable across machines |
-| Database | SQLite + sqlx | Single-user local file; `sqlx-cli` for migrations; zero daemon |
+| Database | SQLite + sqlx | Single-user local file; migrations embedded in binary (`sqlx::migrate!()`), run on startup; zero daemon |
 | LLM | Configurable via env | `LLM_MOCK=true` returns hardcoded JSON for offline dev |
 | Packaging | docker compose | Whole stack (login + app) in one compose; deploys on any Linux VM/LXC (§9) |
 | CI | self-hosted GitHub Actions | `cargo check`/`test` + project self-checks on every push/PR (§9) |
@@ -52,7 +52,7 @@ templates/
     cv_ready.html         terminal card shown when generation completes
 
 migrations/
-  0001_init.sql           initial schema (run via sqlx-cli)
+  0001_init.sql           initial schema (embedded in the binary via `sqlx::migrate!()`, run on startup)
 ```
 
 ### 1.4. High-Level Architecture Diagram
@@ -103,7 +103,7 @@ flowchart TD
 ```bash
 # Arch Linux
 pacman -S rustup python python-pip sqlite docker docker-compose
-cargo install cargo-watch sqlx-cli
+cargo install cargo-watch         # sqlx-cli optional: the binary self-migrates via sqlx::migrate!() on startup
 pip install "scrapling[all]"         # parser + fetchers + shell + ai (bare `scrapling` lacks fetchers)
 scrapling install                    # browsers + system deps for DynamicFetcher
 ```
@@ -124,6 +124,12 @@ migrate:
 dev: migrate
 	DATABASE_URL=$(DATABASE_URL) cargo watch -x run
 ```
+
+> **M10 note:** migrations now run automatically on startup via `sqlx::migrate!()`
+> embedded in the binary (`src/main.rs`), and `SqliteConnectOptions::create_if_missing(true)`
+> bootstraps the db file on a fresh volume. The `make migrate` target above is therefore
+> **redundant** (kept as an explicit escape hatch for bare-metal dev); the container path
+> doesn't use it at all — no `sqlx-cli` in the image.
 
 ### 2.3. Mock LLM Mode
 

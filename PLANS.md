@@ -4,7 +4,7 @@
 
 Phase 1: paste an `id.jobstreet.com` job URL → scrape → LLM-tailored CV → user approves/rejects. One site, end-to-end, no scaffolding for the other 42.
 
-**Status:** M9 complete — M10 next. Phase 1 ✅ complete + verified end-to-end with real LLM (OpenRouter/DeepSeek); M9 fixed the empty `experiences[]` defect (3/3 sample URLs now return non-empty, JD-derived experiences). Next loop: **M10** (Docker deploy verify) → **M11** (CD verify).
+**Status:** M10 complete — M11 next. Phase 1 ✅ + containerized deploy ✅ proven end-to-end (fresh-volume `docker compose up` → paste JobStreet URL → real LLM CV with non-empty experiences, all in-container). M10 fixed three container-only bugs (glibc mismatch, `create_if_missing` default, stale-name/port conflicts) — see `docker-multistage` skill. Next: **M11** (CD pipeline verify).
 
 Execution order is strict. Each milestone is verifiable before the next starts. Don't skip ahead; an unverified milestone rots.
 
@@ -165,12 +165,16 @@ The 2026-06-21 end-to-end verify returned an **empty `experiences[]`** — summa
 
 M8 wrote the Dockerfile + compose but the full stack was never run in containers — only built.
 
-- [ ] `docker compose up --build` — both `login` + `app` start cleanly
-- [ ] Get `session.json` into the `app_data` volume (copy from host, or `docker compose exec app python session.py` after logging in via `:6901`)
-- [ ] Paste a JobStreet URL at `:3000` → CV generates inside the container
-- [ ] Fix anything that only works on bare metal (paths, sandbox, env)
-- **Verify:** full Phase-1 flow works from `docker compose up` on this host.
-- **Done when:** containerized end-to-end is **proven**, not just built. Update Architecture §9 + `docker-multistage` skill with anything that broke.
+- [x] `docker compose up --build` — both `login` + `app` start cleanly
+- [x] Get `session.json` into the `app_data` volume (copy from host, or `docker compose exec app python session.py` after logging in via `:6901`)
+- [x] Paste a JobStreet URL at `:3000` → CV generates inside the container
+- [x] Fix anything that only works on bare metal (paths, sandbox, env)
+- **Verify:** full Phase-1 flow works from `docker compose up` on this host. ✅ Verified 2026-06-22 — fresh anonymous volume: app bootstrapped its own db + served; POSTed `id.jobstreet.com/job/87400340` → real LLM CV (13 JD-derived skills, 1 experience w/ 4 quantified bullets), clean logs.
+- **Done when:** containerized end-to-end is **proven**, not just built. ✅
+- **What broke (all container-only, now in `docker-multistage` skill):**
+  1. **glibc mismatch** — builder `rust:*-slim` (Debian trixie, 2.41) over runtime `ubuntu:22.04` (2.35): binary failed `GLIBC_2.39 not found`. Fixed by matching builder+runtime to the same distro (both `debian:bookworm`, 2.36).
+  2. **`create_if_missing` defaults false** — `SqlitePool::connect()` can't *create* the db on a fresh volume → `SQLITE_CANTOPEN`. Bare metal always worked only because `jobagent.db` pre-existed from M1. Fixed via `SqliteConnectOptions::create_if_missing(true)`. (A musl-static detour was a red herring — it broke SQLite file access entirely.)
+  3. **stale container name + host port** — the Prep-era `jobhunting-login` smoke-test container and a leftover bare-metal `cargo run` on `:3000` blocked `compose up`. Removed both before the clean bring-up.
 
 ### M11 — Verify CD pipeline
 
