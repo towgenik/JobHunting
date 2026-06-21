@@ -677,6 +677,8 @@ Submit returns `processing.html` immediately. The fragment polls `GET /jobs/:id/
 
 Multiple agents work this repo in parallel — they cannot share a single working directory without colliding on file edits and the `target/` build cache. The project uses a **bare repo + worktree** layout: one bare hub holds all commits and branches; each agent works in its own worktree (a sibling directory with a full file checkout but sharing commit history).
 
+**Agent action card:** `skills/worktree/SKILL.md` — the short-form workflow every agent reads before editing files. This section is the reference; the skill is the dispatch.
+
 ### 8.1 Layout
 
 ```
