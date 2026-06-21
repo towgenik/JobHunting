@@ -670,3 +670,72 @@ Submit returns `processing.html` immediately. The fragment polls `GET /jobs/:id/
 6. **Poll resolves:** Status → `pending_approval`. The next `/card` poll returns `cv_ready.html` (no `hx-trigger`, so polling stops). If `process_job` errors at any step, status → `failed` and `/card` returns the failed card.
 7. **Review:** User clicks **Review CV →**, sees side-by-side job description and generated CV.
 8. **Decision:** User clicks **Approve** or **Reject** (with confirm step + reason textarea). Status updated in database.
+
+---
+
+## 8. Multi-Agent Workspace
+
+Multiple agents work this repo in parallel — they cannot share a single working directory without colliding on file edits and the `target/` build cache. The project uses a **bare repo + worktree** layout: one bare hub holds all commits and branches; each agent works in its own worktree (a sibling directory with a full file checkout but sharing commit history).
+
+### 8.1 Layout
+
+```
+JobHunting/                  ← project root; no working files live here
+├── .bare/                   ← bare repo (commit/branch storage; never edited directly)
+├── .git                     ← file containing `gitdir: ./.bare` (so git works from root)
+├── .env                     ← shared dev env (gitignored, lives outside worktrees)
+├── main/                    ← `main` branch worktree (integration / staging)
+├── m2-scrape/               ← per-milestone worktrees (created on demand)
+└── m3-backend/
+```
+
+### 8.2 Why bare + worktree
+
+| Property | Effect |
+|----------|--------|
+| File isolation | Each agent edits in its own worktree; no concurrent writes to the same file. |
+| Build isolation | Each worktree has its own `target/`, so concurrent `cargo build` doesn't contend. |
+| Shared history | All worktrees share the bare hub; commits in one are visible to others via `git log --all` immediately. No push/pull between them. |
+| Cheap context switch | `cd ../m3-backend` switches branch+files atomically; no stashing. |
+
+### 8.3 Starting a milestone (per-agent)
+
+```bash
+# From project root
+git worktree add m2-scrape -b m2-scrape main
+cd m2-scrape
+make dev                    # sources ../.env, builds in local target/, runs migration
+```
+
+The new worktree shares `.bare`'s history. `make dev` works out of the box because `../.env` resolves to the project root config.
+
+### 8.4 Finishing a milestone (integration)
+
+When the milestone's verify step passes, merge into `main` from the `main` worktree:
+
+```bash
+cd ../main
+git merge m2-scrape
+git worktree remove ../m2-scrape
+git branch -d m2-scrape
+```
+
+`main` is the only branch that ever gets pushed to a remote (when one is added). The bare hub is the local source of truth — never push between worktrees.
+
+### 8.5 Shared vs per-worktree state
+
+| Path | Scope | Why |
+|------|-------|-----|
+| `.env` | Shared (project root) | One config; Makefile sources `../.env` from any worktree |
+| `target/` | Per-worktree | Avoid concurrent-build contention; rebuilds are ~1m once, 0.3s after |
+| `jobagent.db` | Per-worktree | Each agent gets isolated test data; merge never touches DB state |
+| `~/.local/share/job-agent/brave-profile` | Shared (machine-wide) | One Brave profile copy; per-worktree would re-copy ~1GB on first scrape |
+
+### 8.6 Repo setup commands (one-time, already applied)
+
+```bash
+mkdir JobHunting && cd JobHunting
+git clone --bare <source> .bare
+echo "gitdir: ./.bare" > .git          # so `git worktree …` works from project root
+git worktree add main                   # creates main/ worktree on `main` branch
+```

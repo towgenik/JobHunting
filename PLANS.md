@@ -4,9 +4,30 @@
 
 Phase 1: paste a `jobstreet.co.id` job URL → scrape → LLM-tailored CV → user approves/rejects. One site, end-to-end, no scaffolding for the other 42.
 
-**Status:** M1 complete — repo bootstraps, migration runs, `make dev` serves 200 on :3000. M2 (scrape spike) next.
+**Status:** Workspace restructured for multi-agent work (bare+worktree, see Architecture §8). M1 complete — repo bootstraps, migration runs, `make dev` serves 200 on :3000 from `main/` worktree. M2 (scrape spike) next.
 
 Execution order is strict. Each milestone is verifiable before the next starts. Don't skip ahead; an unverified milestone rots.
+
+---
+
+## Workspace (per-milestone rhythm)
+
+Each milestone runs in its own worktree so multiple agents don't collide. Pattern is documented in Architecture §8; the short version:
+
+```bash
+# Start a milestone (from project root)
+git worktree add m2-scrape -b m2-scrape main
+cd m2-scrape
+make dev                                  # sources ../.env, builds in local target/
+
+# … do the work, verify …
+
+# Finish: merge from the main worktree
+cd ../main && git merge m2-scrape
+git worktree remove ../m2-scrape && git branch -d m2-scrape
+```
+
+Shared state lives at the project root (`.env`); per-worktree state (`target/`, `jobagent.db`) is isolated and disposable.
 
 ---
 
