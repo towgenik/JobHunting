@@ -4,7 +4,7 @@
 
 Phase 1: paste a `jobstreet.co.id` job URL → scrape → LLM-tailored CV → user approves/rejects. One site, end-to-end, no scaffolding for the other 42.
 
-**Status:** M1 complete — workspace bootstrapped (`main/` worktree, `.bare/` hub, agent layer, GitHub remote at `menggatot/JobHunting`). Ready to dispatch M2 (scrape spike) via the per-worktree rhythm.
+**Status:** Prep complete — container scaffold, CI, self-improvement layer all committed + pushed. Self-hosted runner `jobhunting-runner` online, CI green (`7e5d23e`). Login bridge-networking smoke test still pending (user action). **Next: dispatch M2 (scrape spike)**.
 
 Execution order is strict. Each milestone is verifiable before the next starts. Don't skip ahead; an unverified milestone rots.
 
@@ -78,11 +78,12 @@ Foundation so M2–M7 can cook and the result deploys anywhere. Direct edits in 
 - [x] Root `docker-compose.yml` — portable `login` service (de-host-coupled); `app` stubbed for M8 (Architecture §9)
 - [x] Native `login/` image — renamed from `kasmvnc-docker/`, de-host-coupled (no host networking, no `/home/user/...` mounts), host-specific docs removed; only `Dockerfile` + `entrypoint.sh` remain
 - [x] `.github/workflows/ci.yml` — self-hosted runner; `cargo check` + `cargo test` + project self-checks (Architecture §9.3)
-- [ ] **User:** commit `login/` + the root compose + `.github/` to `main` and push — CI won't run and container builds won't work until they're on GitHub
+- [x] `.opencode/skills/sync/SKILL.md` — doc-sync + self-improvement protocol; agents write skills on failures/surprises before every READY
+- [x] **Done:** committed + pushed — `login/`, `docker-compose.yml`, `.github/`, `.opencode/skills/sync/` all on `main` (`7e5d23e`)
 - [ ] **User:** smoke-test the login container on bridge networking — `docker compose up login`, open http://localhost:6901, confirm noVNC loads (can't run containers from here)
-- [ ] **User:** register a self-hosted GitHub Actions runner (repo Settings → Actions → Runners)
-- **Verify:** `docker compose up login` reaches noVNC on :6901; a CI run goes green on push.
-- **Done when:** login container is portable + CI is green. The **app** containerization is M8.
+- [x] **Done:** self-hosted runner `jobhunting-runner` registered + running as systemd service; CI green ✓
+- **Verify:** CI green ✓ (`7e5d23e`). `docker compose up login` → noVNC :6901 — **pending** user smoke-test.
+- **Done when:** CI green ✓ + login bridge-networking confirmed. App containerization is M8.
 
 ---
 
