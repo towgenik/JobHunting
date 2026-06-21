@@ -105,6 +105,17 @@ async fn submit_job(
         .into_response();
     }
 
+    // Duplicate URL: surface the existing row's card rather than returning 500.
+    // ponytail: check before insert so we never rely on catching the UNIQUE error
+    // string (driver-specific and fragile). Two requests racing on the same URL is
+    // unlikely for a single-user tool but the check is cheap.
+    if let Ok(Some(existing_id)) = db::get_job_id_by_url(&app.db, &body.url).await {
+        let url = db::get_job_url(&app.db, existing_id)
+            .await
+            .unwrap_or_else(|_| body.url.clone());
+        return ProcessingTemplate { id: existing_id, url }.into_response();
+    }
+
     let job_id = match db::create_job_stub(&app.db, &body.url).await {
         Ok(id) => id,
         Err(e) => {

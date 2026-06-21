@@ -4,7 +4,7 @@
 
 Phase 1: paste an `id.jobstreet.com` job URL → scrape → LLM-tailored CV → user approves/rejects. One site, end-to-end, no scaffolding for the other 42.
 
-**Status:** M6 ✅ complete — M7 next.
+**Status:** M7 ✅ complete — M8 next.
 
 Execution order is strict. Each milestone is verifiable before the next starts. Don't skip ahead; an unverified milestone rots.
 
@@ -131,10 +131,10 @@ Foundation so M2–M7 can cook and the result deploys anywhere. Direct edits in 
 - **Done when:** master CV feeds generation.
 
 ### M7 — Hardening pass (only what's actually bitten)
-- [ ] Scrape failure → status `failed` → card shows error.
-- [ ] Duplicate URL → return the existing row's card (feature, not error: a UNIQUE collision means the user already pasted this URL — surface it, don't 500). Update Architecture §5.7 when this lands.
-- [ ] One `assert`-based self-check per non-trivial module per the ponytail rule — `generate.rs` and `db.rs` get a `demo()` or `#[test]`. Nothing else unless observed.
-- [ ] Anything else only if observed during M1–M6 — no speculative error handling.
+- [x] Scrape failure → status `failed` → card shows error.
+- [x] Duplicate URL → return the existing row's card (feature, not error: a UNIQUE collision means the user already pasted this URL — surface it, don't 500). Update Architecture §5.7 when this lands.
+- [x] One `assert`-based self-check per non-trivial module per the ponytail rule — `generate.rs` and `db.rs` get a `demo()` or `#[test]`. Nothing else unless observed.
+- [x] Anything else only if observed during M1–M6 — no speculative error handling.
 - **Verify:** 10-URL test session produces no unhandled panics in `cargo run`.
 - **Done when:** Phase 1 exit criteria from Architecture §1.1 met — 10 sample JobStreet URLs flow through the full UI without manual intervention.
 

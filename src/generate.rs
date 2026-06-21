@@ -131,3 +131,46 @@ async fn call_llm(app: &AppState, prompt: &str) -> Result<Value> {
 
     Ok(cv)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Self-check: `build_prompt` output contains all three required sections.
+    /// If the format changes the LLM stops receiving the context it needs.
+    #[test]
+    fn build_prompt_contains_required_sections() {
+        let context = json!({"job_description": "Engineer role", "master_cv": "CV text"});
+        let schema  = json!({"summary": "string", "skills": []});
+        let prompt  = build_prompt("Do the thing", context, schema);
+
+        assert!(prompt.contains("### CONTEXT"),    "missing CONTEXT section");
+        assert!(prompt.contains("### TASK"),       "missing TASK section");
+        assert!(prompt.contains("OUTPUT FORMAT"),  "missing OUTPUT FORMAT section");
+        assert!(prompt.contains("Do the thing"),   "task text not in prompt");
+        assert!(prompt.contains("job_description"),"context not serialized into prompt");
+    }
+
+    /// Self-check: mock LLM output has the three required top-level keys.
+    /// The `process_job` pipeline will panic at template-render time if any of
+    /// these are missing, so catch it here instead of at runtime.
+    #[tokio::test]
+    async fn mock_llm_returns_required_keys() {
+        // Build a minimal AppState with mock_llm = true; no real DB or HTTP needed.
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("in-memory db");
+        let app = crate::AppState {
+            db:           pool,
+            http:         reqwest::Client::new(),
+            llm_endpoint: String::new(),
+            llm_api_key:  String::new(),
+            llm_model:    String::new(),
+            mock_llm:     true,
+        };
+        let result = call_llm(&app, "ignored prompt").await.expect("mock must not fail");
+        assert!(result["summary"].is_string(),   "mock missing 'summary'");
+        assert!(result["skills"].is_array(),     "mock missing 'skills'");
+        assert!(result["experiences"].is_array(),"mock missing 'experiences'");
+    }
+}

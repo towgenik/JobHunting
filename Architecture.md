@@ -530,7 +530,10 @@ async fn call_llm(app: &AppState, prompt: &str) -> Result<Value> {
 **`src/main.rs` (route handlers)**
 ```rust
 // POST /jobs — create stub record, spawn background task, return polling card immediately.
-// ponytail: Phase 1 — reject non-id.jobstreet.com URLs at the boundary, not in the scraper
+// ponytail: Phase 1 — reject non-id.jobstreet.com URLs at the boundary, not in the scraper.
+// Duplicate URL: check before insert via get_job_id_by_url; return the existing job's
+// ProcessingTemplate so the user's card picks up current status rather than erroring.
+// This is intentional UX: "you already submitted this URL, here's where it is."
 async fn submit_job(
     State(app): State<AppState>,
     Form(body): Form<JobForm>,
@@ -540,6 +543,13 @@ async fn submit_job(
             "<article><span class=\"error\">Phase 1 supports id.jobstreet.com URLs only.</span></article>"
         ).into_response();
     }
+
+    // Duplicate URL — surface the existing row's card (not a 500).
+    if let Ok(Some(existing_id)) = db::get_job_id_by_url(&app.db, &body.url).await {
+        let url = db::get_job_url(&app.db, existing_id).await.unwrap_or_else(|_| body.url.clone());
+        return ProcessingTemplate { id: existing_id, url }.into_response();
+    }
+
     let job_id = db::create_job_stub(&app.db, &body.url).await
         .expect("failed to create job record");
 
@@ -593,6 +603,8 @@ pub fn router(state: AppState) -> Router {
         .with_state(state)
 }
 ```
+
+**Duplicate URL behaviour (M7):** `POST /jobs` calls `db::get_job_id_by_url` before inserting. If the URL already exists, it returns `ProcessingTemplate` for the existing job — the HTMX card immediately shows the current status (scraping / pending_approval / failed / etc.) instead of an error. This is a feature: submitting the same URL twice surfaces "here's where it already is." The check is a plain `SELECT` before `INSERT`; no reliance on catching UNIQUE constraint error strings (driver-specific, fragile).
 
 ---
 

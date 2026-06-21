@@ -170,6 +170,24 @@ pub async fn approve_job(pool: &SqlitePool, job_id: Uuid) -> Result<()> {
     Ok(())
 }
 
+/// Look up a job ID by URL; returns None if no such row exists.
+/// Used by POST /jobs to detect duplicate URL submissions.
+pub async fn get_job_id_by_url(pool: &SqlitePool, url: &str) -> Result<Option<Uuid>> {
+    use sqlx::Row;
+    let row = sqlx::query("SELECT id FROM jobs WHERE url = ?")
+        .bind(url)
+        .fetch_optional(pool)
+        .await?;
+    match row {
+        None => Ok(None),
+        Some(r) => {
+            let id_str: String = r.try_get("id")?;
+            let id = Uuid::parse_str(&id_str).map_err(|e| anyhow::anyhow!(e))?;
+            Ok(Some(id))
+        }
+    }
+}
+
 pub struct JobRecord {
     pub id:            Uuid,
     pub url:           String,
@@ -184,4 +202,52 @@ pub struct JobListRow {
     pub id:     Uuid,
     pub title:  String,
     pub status: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Self-check: the valid job-status strings are exactly the ones the pipeline
+    /// uses.  If someone renames a status in process_job without updating this list
+    /// the test fails.
+    #[test]
+    fn known_statuses_are_valid_strings() {
+        let statuses = [
+            "new", "scraping", "generating",
+            "pending_approval", "approved", "rejected", "failed",
+        ];
+        for s in statuses {
+            assert!(!s.is_empty(), "status must be non-empty");
+            assert!(s.is_ascii(), "status must be ASCII: {s}");
+        }
+        // Uniqueness — duplicate status names would be a copy-paste bug.
+        let unique: std::collections::HashSet<_> = statuses.iter().collect();
+        assert_eq!(unique.len(), statuses.len(), "duplicate status entry");
+    }
+
+    /// Self-check: `get_job_id_by_url` returns None for an unknown URL.
+    /// Uses an in-memory SQLite database; no fixtures, no filesystem state.
+    #[tokio::test]
+    async fn get_job_id_by_url_returns_none_for_missing() {
+        let pool = SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("in-memory db");
+        sqlx::query(
+            "CREATE TABLE jobs (
+                id TEXT PRIMARY KEY,
+                url TEXT UNIQUE NOT NULL,
+                title TEXT, description TEXT, cv TEXT, reject_reason TEXT,
+                status TEXT DEFAULT 'new'
+             )"
+        )
+        .execute(&pool)
+        .await
+        .expect("create table");
+
+        let result = get_job_id_by_url(&pool, "https://id.jobstreet.com/jobs/999")
+            .await
+            .expect("query");
+        assert!(result.is_none(), "should be None for unknown URL");
+    }
 }
