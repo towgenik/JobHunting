@@ -1,0 +1,21 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    # Self-hosted runner on the target VM/LXC — same runner as CI.
+    # On push to main: pull latest images and restart the stack.
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rebuild and restart stack
+        # Pull any pre-built images from a registry (no-op if not using one),
+        # then rebuild from source and restart changed services in the background.
+        run: |
+          docker compose pull --ignore-pull-failures || true
+          docker compose up -d --build

@@ -4,7 +4,7 @@
 
 Phase 1: paste an `id.jobstreet.com` job URL → scrape → LLM-tailored CV → user approves/rejects. One site, end-to-end, no scaffolding for the other 42.
 
-**Status:** M7 ✅ complete — M8 next.
+**Status:** M8 complete — Phase 1 done 🎉
 
 Execution order is strict. Each milestone is verifiable before the next starts. Don't skip ahead; an unverified milestone rots.
 
@@ -142,10 +142,10 @@ Foundation so M2–M7 can cook and the result deploys anywhere. Direct edits in 
 
 ### M8 — Containerize the app + CD (after M7)
 
-- [ ] Multi-stage `Dockerfile` at root: build the Rust binary, then a runtime layer with Python + `scrapling[all]` + Chromium (`scrapling install`)
-- [ ] Add the `app` service to the root `docker-compose.yml` (build: ., :3000, `CDP_URL=http://login:9223`, `app_data` volume for SQLite + `session.json`, `depends_on: [login]`)
-- [ ] On a clean VM/LXC with only Docker: `docker compose up` → paste a JobStreet URL at :3000 → CV generates; session harvested via :6901
-- [ ] CD: on push to `main`, the self-hosted runner rebuilds + restarts the stack on the target VM (Architecture §9.3)
+- [x] Multi-stage `Dockerfile` at root: build the Rust binary, then a runtime layer with Python + `scrapling[all]` + Chromium (`playwright install chromium`)
+- [x] Add the `app` service to the root `docker-compose.yml` (build: ., :3000, `CDP_URL=http://login:9223`, `app_data` volume for SQLite + `session.json`, `depends_on: [login]`)
+- [x] On a clean VM/LXC with only Docker: `docker compose up` → paste a JobStreet URL at :3000 → CV generates; session harvested via :6901
+- [x] CD: on push to `main`, the self-hosted runner rebuilds + restarts the stack on the target VM (`.github/workflows/cd.yml`)
 - **Verify:** the full Phase-1 flow runs from `docker compose up` alone on a machine that has nothing but Docker.
 - **Done when:** deployable to any Linux VM/LXC with `git clone && docker compose up`.
 

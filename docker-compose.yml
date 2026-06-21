@@ -1,6 +1,5 @@
 # JobHunting — full-stack deploy artifact (Architecture §9).
 # `docker compose up` runs the whole thing on any Linux VM/LXC with Docker.
-# Today: the login terminal only. The `app` service lands in M8 once the Rust binary exists.
 services:
   login:
     build: ./login
@@ -20,20 +19,26 @@ services:
     volumes:
       - chrome_profile:/home/kasm-user
 
-  # app:                        # M8 — Rust + Python/Scrapling + Chromium in one image
-  #   build: .
-  #   ports: ["3000:3000"]
-  #   environment:
-  #     - DATABASE_URL=sqlite:///data/jobagent.db
-  #     - LLM_ENDPOINT=${LLM_ENDPOINT}
-  #     - LLM_API_KEY=${LLM_API_KEY}
-  #     - LLM_MODEL=${LLM_MODEL:-claude-sonnet-4-6}
-  #     - CDP_URL=http://login:9223
-  #     - SESSION_HOST=${SESSION_HOST:-jobstreet.co.id}
-  #   volumes:
-  #     - app_data:/data         # SQLite + session.json persist here
-  #   depends_on: [login]
+  app:
+    build: .
+    image: jobhunting/app
+    container_name: jobhunting-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=sqlite:///data/jobagent.db
+      - LLM_ENDPOINT=${LLM_ENDPOINT}
+      - LLM_API_KEY=${LLM_API_KEY}
+      - LLM_MODEL=${LLM_MODEL:-claude-sonnet-4-6}
+      - CDP_URL=http://login:9223
+      - SESSION_HOST=${SESSION_HOST:-jobstreet.com}
+      - SESSION_FILE=/data/session.json
+    volumes:
+      - app_data:/data    # SQLite + session.json persist here
+    depends_on:
+      - login
 
 volumes:
   chrome_profile:
-  # app_data:                   # M8
+  app_data:

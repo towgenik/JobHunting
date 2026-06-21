@@ -54,6 +54,7 @@ Does **not** own: `main/`, other worktrees, project root, merge decisions.
 | Scrapling + JobStreet gotchas | `.opencode/skills/scrapling-jobstreet/SKILL.md` |
 | axum + sqlx gotchas | `.opencode/skills/axum-sqlx-gotchas/SKILL.md` |
 | Anthropic API raw HTTP gotchas | `.opencode/skills/anthropic-api-gotchas/SKILL.md` |
+| Docker multi-stage (Rust+Python) gotchas | `.opencode/skills/docker-multistage/SKILL.md` |
 
 ## Hard rules (both roles)
 

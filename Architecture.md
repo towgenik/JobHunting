@@ -928,7 +928,7 @@ The whole stack is one `docker compose` (root `docker-compose.yml`) — the only
 | Service | Image | Role | Port |
 |---------|-------|------|------|
 | `login` | `./login` (KasmVNC Chrome) | Human logs in; `session.py` harvests cookies over CDP | 6901 (noVNC, published), 9223 (CDP, internal to the compose net) |
-| `app` | `.` multi-stage: Rust + Python/Scrapling + Chromium — **M8** | Web UI; spawns `scrape.py` in-container with its own browser | 3000 (published) |
+| `app` | `.` multi-stage: Rust + Python/Scrapling + Chromium | Web UI; spawns `scrape.py` in-container with its own browser | 3000 (published) |
 
 Volumes: `chrome_profile` (login session), `app_data` (SQLite + `session.json`). The scraper's own Chromium stays separate from the login browser (§2.4).
 
@@ -944,13 +944,15 @@ docker compose up -d     # login terminal now; app joins in M8
 - **VM:** install Docker, done.
 - **LXC:** enable `nesting=1` (and `keyctl=1` on some base images) on the container, install Docker inside, then the same compose.
 
-### 9.3 CI — self-hosted GitHub Actions
+### 9.3 CI + CD — self-hosted GitHub Actions
 
-`.github/workflows/ci.yml` runs on a **self-hosted** runner on every push/PR to `main`:
+**CI** (`.github/workflows/ci.yml`) runs on every push/PR to `main`:
 
-1. `cargo check --all-targets` + `cargo test` — the Rust gates. Tests land in M3–M7; CI runs them automatically as they appear.
-2. Project self-checks — `AGENTS.md` under its 4 KB cap, and no secrets/DBs/`session.json` tracked.
+1. `cargo check --all-targets` + `cargo test` — the Rust gates.
+2. Project self-checks — `AGENTS.md` under its 4 KB cap, no secrets/DBs/`session.json` tracked.
 
-**Register a runner** (one-time, user action): repo → Settings → Actions → Runners → New self-hosted runner → follow the Linux x64 steps on the host/VM that will run jobs. The workflow uses `dtolnay/rust-toolchain`, so the runner needs no pre-installed Rust.
+**CD** (`.github/workflows/cd.yml`) runs on every push to `main`:
 
-**CD** (continuous deploy) is M8+: on push to `main`, the runner rebuilds the images and restarts the stack on the target VM. Not wired today — the app must exist first.
+1. Self-hosted runner runs `docker compose up -d --build` on the host, rebuilding changed services and restarting the stack. Simple and direct — no registry, no orchestrator.
+
+**Register a runner** (one-time, user action): repo → Settings → Actions → Runners → New self-hosted runner → follow the Linux x64 steps on the host/VM that will run jobs. The same runner handles both CI and CD.

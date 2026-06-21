@@ -1,0 +1,23 @@
+# Exclude build artifacts from Docker build context.
+# Without this, `target/` (potentially several GB) gets sent to the daemon
+# on every `docker build`, making builds very slow.
+target/
+
+# Dev-only files that don't belong in the image
+*.db*
+session.json
+.env
+.env.*
+.git
+.gitignore
+
+# Python cache
+__pycache__/
+*.pyc
+.venv/
+
+# Worktree-local files
+AGENTS.md
+*.md
+*.xlsx
+Makefile

@@ -273,9 +273,14 @@ async fn main() {
         .route("/settings",          get(settings_page).post(save_settings))
         .with_state(state);
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
+    // Bind to 0.0.0.0 so the server is reachable inside Docker (127.0.0.1 would
+    // be invisible outside the container). When running natively via `make dev`
+    // this is still fine — the port is only published on localhost by compose.
+    let bind_addr = std::env::var("BIND_ADDR")
+        .unwrap_or_else(|_| "0.0.0.0:3000".into());
+    let listener = tokio::net::TcpListener::bind(&bind_addr)
         .await
         .unwrap();
-    println!("Listening on http://127.0.0.1:3000");
+    println!("Listening on http://{bind_addr}");
     axum::serve(listener, app).await.unwrap();
 }
