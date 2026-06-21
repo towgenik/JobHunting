@@ -1,0 +1,7 @@
+<article id="job-{{ id }}"
+         hx-get="/jobs/{{ id }}/card"
+         hx-trigger="every 2s"
+         hx-swap="outerHTML"
+         aria-busy="true">
+  Processing {{ url }}…
+</article>

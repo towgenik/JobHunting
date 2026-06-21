@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<h1>Master CV</h1>
+<p>Paste your full CV here. This is the source material for all generated CVs.</p>
+<form hx-post="/settings" hx-swap="none">
+  <textarea name="master_cv" rows="30"
+            style="width:100%; font-family:monospace">{{ master_cv }}</textarea>
+  <button type="submit">Save</button>
+</form>
+{% endblock %}

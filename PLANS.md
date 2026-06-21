@@ -4,7 +4,7 @@
 
 Phase 1: paste an `id.jobstreet.com` job URL → scrape → LLM-tailored CV → user approves/rejects. One site, end-to-end, no scaffolding for the other 42.
 
-**Status:** M2 ✅ complete — scrape spike proven, 3/3 JobStreet URLs return non-empty title + description with container down. **Next: dispatch M3 (backend)**.
+**Status:** M3 ✅ complete — full happy path proven with LLM_MOCK=true. **Next: dispatch M4 (real LLM)**.
 
 Execution order is strict. Each milestone is verifiable before the next starts. Don't skip ahead; an unverified milestone rots.
 
@@ -104,13 +104,13 @@ Foundation so M2–M7 can cook and the result deploys anywhere. Direct edits in 
 ### M3 — Full backend in one pass (DB + templates + pipeline + mock LLM)
 *v1 plan's M3+M4 merged — `cargo check` alone proves nothing; the only real verification is the end-to-end happy path.*
 
-- [ ] `src/db.rs`: every function referenced in §5 (`create_job_stub`, `set_status`, `get_job_url`, `update_job_data`, `get_status`, `save_cv_draft`, `get_master_cv`, `render_cv_ready`, settings get/upsert). Plain `sqlx::query` — no compile-time macro dance unless a typo bites.
-- [ ] `src/templates.rs` + `templates/`: askama structs from §5.3; HTML from §6 (base, index, job, settings, fragments/processing, fragments/cv_ready). Dashboard input includes the `pattern="…id.jobstreet.com/…"` guard from §6.2.
-- [ ] `src/generate.rs`: `process_job`, `fetch_job`, `scrape_once`, `build_prompt`, `call_llm` (mock branch only).
-- [ ] Routes in `src/main.rs`: `POST /jobs` (with `is_phase1_url` host guard), `GET /jobs/:id/card`, `GET /`.
-- [ ] HTMX polling card lifecycle: processing → cv_ready (stops polling).
+- [x] `src/db.rs`: every function referenced in §5 (`create_job_stub`, `set_status`, `get_job_url`, `update_job_data`, `get_status`, `save_cv_draft`, `get_master_cv`, `render_cv_ready`, settings get/upsert). Plain `sqlx::query` — no compile-time macro dance unless a typo bites.
+- [x] `src/templates.rs` + `templates/`: askama structs from §5.3; HTML from §6 (base, index, job, settings, fragments/processing, fragments/cv_ready). Dashboard input includes the `pattern="…id.jobstreet.com/…"` guard from §6.2.
+- [x] `src/generate.rs`: `process_job`, `fetch_job`, `scrape_once`, `build_prompt`, `call_llm` (mock branch only).
+- [x] Routes in `src/main.rs`: `POST /jobs` (with `is_phase1_url` host guard), `GET /jobs/:id/card`, `GET /`.
+- [x] HTMX polling card lifecycle: processing → cv_ready (stops polling).
 - **Verify:** with `LLM_MOCK=true make dev`, paste a real JobStreet URL → polling card appears → resolves to "CV ready" within ~15s. Inspect DB row: status ends at `pending_approval`, `cv` column is non-empty.
-- **Done when:** full happy path works offline against mock LLM. Templates, DB, and pipeline all proven at once.
+- **Done when:** full happy path works offline against mock LLM. Templates, DB, and pipeline all proven at once. ✅
 
 ### M4 — Real LLM call
 - [ ] Implement non-mock branch of `call_llm` against `LLM_ENDPOINT`

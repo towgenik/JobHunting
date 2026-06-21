@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<form hx-post="/jobs" hx-target="#job-list" hx-swap="afterbegin">
+  <input name="url" type="url"
+         placeholder="Paste an id.jobstreet.com job URL…"
+         pattern="https://id\.jobstreet\.com/.*"
+         title="Phase 1 supports id.jobstreet.com URLs only"
+         required>
+  <button type="submit">Process</button>
+</form>
+<div id="job-list">
+  {% for job in jobs %}
+  <article id="job-{{ job.id }}">
+    <strong>{{ job.title }}</strong>
+    <small> — {{ job.status }}</small>
+    {% if job.status == "pending_approval" || job.status == "approved" || job.status == "rejected" %}
+    <a href="/jobs/{{ job.id }}" role="button" class="outline" style="float:right">Review CV →</a>
+    {% endif %}
+  </article>
+  {% endfor %}
+</div>
+{% endblock %}

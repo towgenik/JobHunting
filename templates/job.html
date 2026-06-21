@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="grid">
+  <section>
+    <h2>Job Description</h2>
+    <pre style="white-space:pre-wrap">{{ description }}</pre>
+  </section>
+  <section>
+    <h2>Generated CV</h2>
+    <p>{{ cv.summary }}</p>
+    <ul>{% for s in cv.skills %}<li>{{ s }}</li>{% endfor %}</ul>
+    {% for exp in cv.experiences %}
+      <h3>{{ exp.role }} — {{ exp.company }}</h3>
+      <ul>{% for bp in exp.bullet_points %}<li>{{ bp }}</li>{% endfor %}</ul>
+    {% endfor %}
+
+    <div style="display:flex; gap:0.5rem; margin-top:1rem">
+      <button hx-post="/jobs/{{ id }}/decision"
+              hx-vals='{"approved":"true"}'>Approve</button>
+      <button class="secondary"
+              onclick="document.getElementById('reject-box').style.display='block'">
+        Reject
+      </button>
+    </div>
+
+    <!-- Hidden until Reject is clicked -->
+    <div id="reject-box" style="display:none; margin-top:0.5rem">
+      <textarea id="reason" name="reason"
+                placeholder="Reason for rejection…"
+                style="width:100%"></textarea>
+      <button hx-post="/jobs/{{ id }}/decision"
+              hx-vals='{"approved":"false"}'
+              hx-include="#reason"
+              style="margin-top:0.5rem">
+        Confirm Reject
+      </button>
+    </div>
+  </section>
+</div>
+{% endblock %}

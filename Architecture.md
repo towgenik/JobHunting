@@ -299,7 +299,7 @@ sqlx        = { version = "0.7", features = ["runtime-tokio", "sqlite", "uuid"] 
 reqwest     = { version = "0.12", features = ["json"] }
 serde       = { version = "1",   features = ["derive"] }
 serde_json  = "1"
-uuid        = { version = "1",   features = ["v4"] }
+uuid        = { version = "1",   features = ["v4", "serde"] }
 anyhow      = "1"
 askama      = "0.12"
 askama_axum = "0.4"
@@ -324,8 +324,10 @@ impl AppState {
         Self {
             db,
             http:         reqwest::Client::new(),
-            llm_endpoint: std::env::var("LLM_ENDPOINT").expect("LLM_ENDPOINT required"),
-            llm_api_key:  std::env::var("LLM_API_KEY").expect("LLM_API_KEY required"),
+            llm_endpoint: std::env::var("LLM_ENDPOINT")
+                              .unwrap_or_else(|_| "https://api.anthropic.com/v1/messages".into()),
+            llm_api_key:  std::env::var("LLM_API_KEY")
+                              .unwrap_or_else(|_| "".into()),
             llm_model:    std::env::var("LLM_MODEL")
                               .unwrap_or("claude-sonnet-4-6".into()),
             mock_llm:     std::env::var("LLM_MOCK").is_ok(),
@@ -545,8 +547,8 @@ fn is_phase1_url(url: &str) -> bool {
 // GET /jobs/:id/card — HTMX polls this every 2s; the returned card stops polling
 // at a terminal status (no hx-trigger on the ready/failed fragments).
 async fn job_card(
-    Path(job_id): Path<Uuid>,
     State(app): State<AppState>,
+    Path(job_id): Path<Uuid>,
 ) -> Response {
     match db::get_status(&app.db, job_id).await.unwrap_or_default().as_str() {
         "pending_approval" => db::render_cv_ready(&app.db, job_id).await.into_response(),

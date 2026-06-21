@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Job Agent{% endblock %}</title>
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/htmx.org@2/dist/htmx.min.js"></script>
+</head>
+<body>
+  <main class="container">
+    <nav>
+      <ul><li><strong>Job Agent</strong></li></ul>
+      <ul>
+        <li><a href="/">Jobs</a></li>
+        <li><a href="/settings">Settings</a></li>
+      </ul>
+    </nav>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>
