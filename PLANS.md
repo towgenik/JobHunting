@@ -4,7 +4,7 @@
 
 Phase 1: paste a `jobstreet.co.id` job URL → scrape → LLM-tailored CV → user approves/rejects. One site, end-to-end, no scaffolding for the other 42.
 
-**Status:** Workspace restructured for multi-agent work (bare+worktree, see Architecture §8). M1 complete — repo bootstraps, migration runs, `make dev` serves 200 on :3000 from `main/` worktree. M2 (scrape spike) next.
+**Status:** M1 complete — workspace bootstrapped (`main/` worktree, `.bare/` hub, agent layer, GitHub remote at `menggatot/JobHunting`). Ready to dispatch M2 (scrape spike) via the per-worktree rhythm.
 
 Execution order is strict. Each milestone is verifiable before the next starts. Don't skip ahead; an unverified milestone rots.
 
@@ -36,15 +36,40 @@ Shared state lives at the project root (`.env`); per-worktree state (`target/`, 
 
 ## Milestones
 
-### M1 — Repo bootstrap ✅
-- [x] `git init` (repo not yet initialized)
-- [x] `cargo init`, drop in `Cargo.toml` from Architecture §5.1
-- [x] `Makefile` from §2.2 with one change: `dev` target sources `.env` before `cargo watch` (e.g. `set -a; source .env; set +a; exec cargo watch -x run`). Architecture §5.2 uses `std::env::var().expect()` — without this, boot panics. No `dotenvy` crate; fewer deps. *(Note: used POSIX `. ./.env` instead of `source` — `/bin/sh` on this host is dash.)*
-- [x] `.gitignore` (`/target`, `*.db*`, `.env`), `.env.example` (all 5 vars from §6.6)
-- [x] `migrations/0001_init.sql` from §3 **plus** a `reject_reason TEXT` column on `jobs` (known-needed by M5; folding now avoids a second migration)
-- [x] `src/main.rs` boots an empty axum router on `127.0.0.1:3000`
-- **Verified:** `make dev` then `curl -i localhost:3000/` → `200 OK`, body `ok`.
-- **Done:** server boots clean, migration runs, `.env` loads, repo committed (`178770a`).
+### M1 — Workspace bootstrap ✅ (complete; pre-workflow setup)
+
+One-time setup, completed before the multi-agent workflow existed. Git history holds the detail (commits `178770a` → `ea17e6c`). What's in place **now**, and what an agent joining at M2 must know:
+
+**Layout (see Architecture §8.1, §8.8):**
+- `.bare/` hub + `.git` file at project root pointing at it
+- `main/` worktree on `main` branch — the integration surface
+- `.env` at project root (shared by all worktrees via `../.env`)
+
+**Code in `main/`:**
+- `Cargo.toml` (deps from Architecture §5.1)
+- `Makefile` (sources `../.env`; runs `cargo watch -x run`)
+- `migrations/0001_init.sql` (schema from §3 + `reject_reason` folded in)
+- `src/main.rs` (empty axum router on `127.0.0.1:3000`)
+- `.gitignore`, `.env.example`
+
+**Agent layer:**
+- `AGENTS.md` — mutable entry doc, 4 KB cap
+- `.opencode/skills/worktree/SKILL.md` — worker action card (committed; propagates to new worktrees)
+- `.opencode/skills/orchestrate/SKILL.md` at **project root** (machine-local; not in any worktree)
+- `.pi/skills`, `.claude/skills` symlinks → `.opencode/skills`
+
+**Remote:** `origin → github.com:menggatot/JobHunting.git` (private). Controller pushes only, from `main/`, on user instruction (§8.7).
+
+**Verify (run from `main/`):**
+```bash
+make dev                                  # ~0.3s boot; sources ../.env
+curl -i localhost:3000/                    # → 200 OK, body 'ok'
+git log --oneline                          # 10 commits, latest 'ea17e6c'
+git -C ../.bare remote -v                  # origin → github.com:menggatot/JobHunting.git
+git worktree list                          # .bare (bare) + main on main
+```
+
+**Done.** Workspace ready; agents can be dispatched on M2+. **M2+ follow the per-worktree rhythm** (Workspace section above, Architecture §8.3–§8.4, worker skill). The M1 commands above don't apply to feature milestones — they were one-time setup.
 
 ### M2 — Scrape spike (standalone, before any Rust)
 - [ ] `command -v brave-browser` — fail fast with an install hint if missing (Brave is the only runtime we don't control)
