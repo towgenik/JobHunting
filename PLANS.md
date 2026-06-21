@@ -71,15 +71,34 @@ git worktree list                          # .bare (bare) + main on main
 
 **Done.** Workspace ready; agents can be dispatched on M2+. **M2+ follow the per-worktree rhythm** (Workspace section above, Architecture §8.3–§8.4, worker skill). The M1 commands above don't apply to feature milestones — they were one-time setup.
 
+### Prep — container & CI scaffolding (before M2; "prep the kitchen")
+
+Foundation so M2–M7 can cook and the result deploys anywhere. Direct edits in `main/` (not a dispatched milestone).
+
+- [x] Root `docker-compose.yml` — portable `login` service (de-host-coupled); `app` stubbed for M8 (Architecture §9)
+- [x] Native `login/` image — renamed from `kasmvnc-docker/`, de-host-coupled (no host networking, no `/home/user/...` mounts), host-specific docs removed; only `Dockerfile` + `entrypoint.sh` remain
+- [x] `.github/workflows/ci.yml` — self-hosted runner; `cargo check` + `cargo test` + project self-checks (Architecture §9.3)
+- [ ] **User:** commit `login/` + the root compose + `.github/` to `main` and push — CI won't run and container builds won't work until they're on GitHub
+- [ ] **User:** smoke-test the login container on bridge networking — `docker compose up login`, open http://localhost:6901, confirm noVNC loads (can't run containers from here)
+- [ ] **User:** register a self-hosted GitHub Actions runner (repo Settings → Actions → Runners)
+- **Verify:** `docker compose up login` reaches noVNC on :6901; a CI run goes green on push.
+- **Done when:** login container is portable + CI is green. The **app** containerization is M8.
+
+---
+
 ### M2 — Scrape spike (standalone, before any Rust)
-- [ ] `command -v brave-browser` — fail fast with an install hint if missing (Brave is the only runtime we don't control)
-- [ ] `scrape.py` from §4, runnable on its own
+- [ ] `pip install "scrapling[all]" && scrapling install` — fetchers, `extract` CLI, browsers (bare `pip install scrapling` lacks fetchers → `ModuleNotFoundError`)
+- [ ] `docker compose up -d login` — login container boots (root compose); `curl http://localhost:9223/json/version` returns JSON (CDP is the harvest channel, **not** the scrape path)
+- [ ] Log into `jobstreet.co.id` once via the noVNC UI (http://localhost:6901)
+- [ ] `python session.py` — harvests cookies to `session.json` (§2.4); confirm it prints a non-zero cookie count
+- [ ] Probe before wiring selectors: `scrapling extract fetch '<url>' probe.md` — dumps the rendered body, confirms the page loads behind the login and shows what's visible
+- [ ] `scrape.py` from §4 (own browser + harvested cookies), runnable on its own with the login container **stopped** — proves the scrape path is decoupled
 - [ ] Run against **3 real** JobStreet job-detail URLs (different categories if possible)
 - [ ] Inspect `{"title","description"}` JSON on stdout — both fields non-empty for all 3
-- [ ] If any field is empty, tune selectors and **update Architecture §4** to match what actually works
-- **Verify:** `python scrape.py <url>` prints valid JSON three times in a row.
-- **Done when:** 3/3 sample URLs return non-empty title + description. No Rust touched yet.
-- **Why first:** site HTML is the only piece we don't control. Don't wire a scraper you haven't seen print JSON.
+- [ ] If a field is empty → tune selectors; if the page is anti-bot-blocked → swap `DynamicFetcher` for `StealthyFetcher` (bypasses Cloudflare out of the box). **Update Architecture §4** to match what works.
+- **Verify:** `python scrape.py <url>` prints valid JSON three times in a row **with the kasmvnc container down**.
+- **Done when:** 3/3 sample URLs return non-empty title + description, container-independent. No Rust touched yet.
+- **Why first:** site HTML + the harvested session are the only pieces we don't control. Don't wire a scraper you haven't seen print JSON.
 
 ### M3 — Full backend in one pass (DB + templates + pipeline + mock LLM)
 *v1 plan's M3+M4 merged — `cargo check` alone proves nothing; the only real verification is the end-to-end happy path.*
@@ -120,10 +139,22 @@ git worktree list                          # .bare (bare) + main on main
 
 ---
 
+### M8 — Containerize the app + CD (after M7)
+
+- [ ] Multi-stage `Dockerfile` at root: build the Rust binary, then a runtime layer with Python + `scrapling[all]` + Chromium (`scrapling install`)
+- [ ] Add the `app` service to the root `docker-compose.yml` (build: ., :3000, `CDP_URL=http://login:9223`, `app_data` volume for SQLite + `session.json`, `depends_on: [login]`)
+- [ ] On a clean VM/LXC with only Docker: `docker compose up` → paste a JobStreet URL at :3000 → CV generates; session harvested via :6901
+- [ ] CD: on push to `main`, the self-hosted runner rebuilds + restarts the stack on the target VM (Architecture §9.3)
+- **Verify:** the full Phase-1 flow runs from `docker compose up` alone on a machine that has nothing but Docker.
+- **Done when:** deployable to any Linux VM/LXC with `git clone && docker compose up`.
+
+---
+
 ## Explicitly deferred
 
 - **Other 42 sites** → Phase 2, one at a time, ordered by xlsx category
-- **Per-site selector config map** → Phase 2, when the second site is attempted
-- **Listing/index crawler** → Phase 3, only if per-URL proves insufficient
+- **Per-site selector config map** → Phase 2, when the second site is attempted; Scrapling's `adaptive=True`/`auto_save` (self-healing selectors) may reduce or replace it
+- **Listing/index crawler** → Phase 3, only if per-URL proves insufficient; Scrapling's `Spider` framework (concurrency, pause/resume, multi-session) is the vehicle
+- **Separate scrape container** → alternative to M8's fat app image; base the scraper on `pyd4vinci/scrapling` if the app image gets too heavy. M8 bakes the scraper into the app image by default
 - **Per-function test suites / framework** → only if M7's self-checks prove insufficient
-- **Auth, multi-user, deployment** → never; this is a single-user local tool
+- **Auth, multi-user** → never; single-user. **Deployment** → M8: containerized, `docker compose up` on any Linux VM/LXC; CI on self-hosted GitHub Actions (Prep)

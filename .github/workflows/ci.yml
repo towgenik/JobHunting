@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-test:
+    # Self-hosted runner — register one under repo Settings → Actions → Runners (Architecture §9.3).
+    # Until a runner is registered, jobs stay "waiting for a runner".
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo check
+        run: cargo check --all-targets
+
+      - name: cargo test
+        run: cargo test
+
+      - name: project self-checks
+        run: |
+          # AGENTS.md must stay under its 4 KB cap
+          test "$(wc -c < AGENTS.md)" -lt 4096
+          # no secrets / credentials / DBs / sessions tracked
+          ! git ls-files | grep -iE '\.(env|pem|key|p12)$|secrets/|\.db[^/]*$|session\.json$'

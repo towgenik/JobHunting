@@ -18,6 +18,9 @@ __pycache__/
 *.p12
 secrets/
 
+# Scraped login session (auth cookies — a credential). See Architecture §2.4.
+session.json
+
 # Logs
 *.log
 

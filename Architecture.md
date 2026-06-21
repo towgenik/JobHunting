@@ -22,9 +22,12 @@ This document outlines the complete architecture for an autonomous, AI-driven jo
 | Backend | Rust + axum | Compiler errors as dev feedback loop; reliable long-running async |
 | UI | HTMX + askama + Pico CSS | No JS framework; template errors are `cargo check` errors; zero-build CSS |
 | Live status | HTMX polling | `hx-trigger="every 2s"` swaps the card when the job finishes; no SSE, no extra deps |
-| Scraper | Python + Scrapling | Scrapling is Python-only; invoked as a subprocess, JSON on stdout |
+| Scraper | Python + Scrapling | Launches its own headless browser seeded with cookies harvested from the login terminal (§2.4); invoked as a subprocess, JSON on stdout |
+| Login terminal | KasmVNC Chrome container | A real human logs in here; `session.py` harvests the session over CDP. Not used for scraping (too slow/inconsistent) — no host Brave, portable across machines |
 | Database | SQLite + sqlx | Single-user local file; `sqlx-cli` for migrations; zero daemon |
 | LLM | Configurable via env | `LLM_MOCK=true` returns hardcoded JSON for offline dev |
+| Packaging | docker compose | Whole stack (login + app) in one compose; deploys on any Linux VM/LXC (§9) |
+| CI | self-hosted GitHub Actions | `cargo check`/`test` + project self-checks on every push/PR (§9) |
 
 ### 1.3. Module Structure
 
@@ -68,8 +71,14 @@ flowchart TD
         F[POST /settings] --> J
     end
 
-    subgraph Scraper [Python Scraper - subprocess]
-        H[scrape.py + Scrapling StealthyFetcher]
+    subgraph Scraper [Python Scraper - subprocess, own browser]
+        S[session.py - harvest]
+        H[scrape.py + Scrapling]
+        Q[(session.json cookies)]
+    end
+
+    subgraph Login [Login Terminal]
+        I[Chrome + chrome_profile vol<br/>noVNC :6901 - human login only]
     end
 
     subgraph Data [Data Layer]
@@ -77,7 +86,10 @@ flowchart TD
         K[LLM API]
     end
 
+    S -.->|CDP :9223, harvest cookies| I
+    S --> Q
     C -->|python scrape.py url| H
+    H -->|reads cookies| Q
     H -->|JSON stdout| C
     C --> K
 ```
@@ -90,9 +102,10 @@ flowchart TD
 
 ```bash
 # Arch Linux
-pacman -S rustup python python-pip sqlite
+pacman -S rustup python python-pip sqlite docker docker-compose
 cargo install cargo-watch sqlx-cli
-pip install scrapling
+pip install "scrapling[all]"         # parser + fetchers + shell + ai (bare `scrapling` lacks fetchers)
+scrapling install                    # browsers + system deps for DynamicFetcher
 ```
 
 ### 2.2. Makefile
@@ -120,19 +133,31 @@ Set `LLM_MOCK=true` in your shell to skip real LLM calls during development. The
 LLM_MOCK=true make dev
 ```
 
-### 2.4. Brave Profile Strategy
+### 2.4. Browser Container (KasmVNC) — login terminal, not the scraper
 
-`scrape.py` copies the host Brave profile to a permanent path on first run, not `/tmp` (which is wiped on reboot). The check is `WORK_PROFILE.exists()`, so every later run skips the copy — startup is instant.
+The KasmVNC container exists for one thing: a **real human logs into the job boards in it**. It is *not* used for scraping — driving page loads through the interactive VNC browser is slow and inconsistent. The session it holds is harvested once (cookies), and the scraper runs its own fast headless browser seeded with those cookies.
 
-```
-~/.local/share/job-agent/brave-profile/   ← permanent copy
-```
+**Two steps, decoupled:**
 
-Force a re-sync after logging into new job board accounts by deleting the copy; the next scrape recreates it:
+1. **Login + harvest** (container up, human in the loop):
+   ```bash
+   docker compose up -d login    # root compose is canonical (§9)
+   # noVNC UI → http://localhost:6901   (password from VNC_PW, default admin1)
+   # …log into jobstreet.co.id in the noVNC browser…
+   python session.py        # harvests cookies → ~/.local/share/job-agent/session.json
+   ```
+   The login itself persists in the named volume `chrome_profile` across restarts and rebuilds; `session.py` just reads the current cookies out over CDP.
 
-```bash
-rm -rf ~/.local/share/job-agent/brave-profile
-```
+2. **Scrape** (container may be down): `scrape.py` launches its own browser, injects `session.json`, scrapes. No dependency on the container at scrape time → fast and consistent. Cookies are browser-agnostic, so the scraper's own browser need not match the login terminal's Chrome.
+
+**CDP endpoint:** Chrome exposes CDP on `127.0.0.1:9222` inside the container; `entrypoint.sh` forwards it to `0.0.0.0:9223` (published on `:9223`). `session.py` reads `CDP_URL` (default `http://localhost:9223`) to harvest — the **only** thing the scrape path uses that port for. On the host (`make dev`) that's `http://localhost:9223`; inside the compose stack the app uses `http://login:9223` (§9).
+
+| Port | Purpose |
+|------|---------|
+| 6901 | noVNC web UI — user logs in here |
+| 9223 | CDP endpoint — `session.py` harvests cookies here |
+
+When scraping starts hitting a login wall (cookies expired), re-login in the noVNC UI and re-run `session.py` — no rebuild, no code change. `session.json` is an auth credential: gitignored, lives outside the repo. The SSL-only pitfall (why `VNCOPTIONS` carries `-sslOnly 0`) is documented in `login/Dockerfile`.
 
 ---
 
@@ -164,43 +189,59 @@ INSERT INTO settings (id, master_cv) VALUES (1, '');
 
 ## 4. Python Scraper
 
-**Phase 1 scope:** a plain CLI script invoked once per job with a single `jobstreet.co.id` URL. Not a service, not a crawler — Rust spawns it as a subprocess: `python scrape.py <url>`. It prints `{"title", "description"}` as JSON on stdout; any failure exits non-zero with a traceback on stderr, which Rust logs. Non-JobStreet URLs should be rejected by the caller (Rust) before reaching the scraper; the scraper assumes a JobStreet job-detail page. The Brave profile is copied once on first run (`rm -rf` the copy to resync — see §2.4).
+**Phase 1 scope:** a plain CLI script invoked once per job with a single `jobstreet.co.id` URL. Not a service, not a crawler — Rust spawns it as a subprocess: `python scrape.py <url>`. It prints `{"title", "description"}` as JSON on stdout; any failure exits non-zero with a traceback on stderr, which Rust logs. Non-JobStreet URLs should be rejected by the caller (Rust) before reaching the scraper; the scraper assumes a JobStreet job-detail page. The KasmVNC container is a **login terminal only** — driving page loads through the interactive VNC browser is slow and inconsistent. Instead `session.py` harvests the logged-in cookies once over CDP (§2.4), and `scrape.py` runs its own headless browser seeded with those cookies.
 
 Selectors below are tuned for `jobstreet.co.id` job-detail pages. They will need adjustment per site in Phase 2; do not generalize prematurely.
 
-**`scrape.py`**
+**`session.py`** — harvest the login session from the KasmVNC Chrome over CDP. Run after logging in via noVNC; re-run when cookies expire. The container can be down afterwards.
+```python
+# Harvests jobstreet.co.id login cookies from the KasmVNC Chrome (over CDP) → session.json.
+# This is the ONLY use of the container's CDP port; scraping never drives the VNC browser.
+# ponytail: raw playwright connect_over_cdp — scrapling already depends on playwright
+import json, os
+from pathlib import Path
+from playwright.sync_api import sync_playwright
+
+CDP_URL = os.environ.get("CDP_URL", "http://localhost:9223")
+HOST    = os.environ.get("SESSION_HOST", "jobstreet.co.id")
+OUT     = Path(os.environ.get("SESSION_FILE",
+             str(Path.home() / ".local" / "share" / "job-agent" / "session.json")))
+
+OUT.parent.mkdir(parents=True, exist_ok=True)
+with sync_playwright() as p:
+    browser = p.chromium.connect_over_cdp(CDP_URL)   # attach to the running KasmVNC Chrome
+    ctx = browser.contexts[0]                         # default context holds the login
+    cookies = [c for c in ctx.cookies(f"https://{HOST}") if HOST in c["domain"]]
+    json.dump(cookies, OUT.open("w"))
+print(f"wrote {len(cookies)} cookies → {OUT}")
+```
+
+**`scrape.py`** — runs its **own** headless browser seeded with the harvested cookies. The KasmVNC container is not in the scrape path.
 ```python
 # Invoked as: python scrape.py <url>  →  prints {"title", "description"} JSON on stdout.
-# ponytail: selectors hardcoded for jobstreet.co.id; add a per-site profile map in Phase 2
-import sys, json, shutil, asyncio
+# Launches its OWN headless browser (Scrapling) seeded with cookies harvested from the
+# KasmVNC session. It never drives the VNC browser — that is slow and inconsistent (§2.4).
+# ponytail: Phase 1 — DynamicFetcher + hardcoded jobstreet selectors. If anti-bot bites,
+# swap to StealthyFetcher (bypasses Cloudflare out of the box). For Phase 2 site churn, use
+# adaptive=True / auto_save so Scrapling relocates selectors when pages change.
+import os, sys, json, asyncio
 from pathlib import Path
-from scrapling.fetchers import StealthyFetcher
+from scrapling.fetchers import DynamicFetcher
 
-BRAVE_BIN     = "/usr/bin/brave-browser"
-BRAVE_PROFILE = Path.home() / ".config" / "BraveSoftware" / "Brave-Browser"
-WORK_PROFILE  = Path.home() / ".local" / "share" / "job-agent" / "brave-profile"
+SESSION_FILE = Path(os.environ.get("SESSION_FILE",
+    str(Path.home() / ".local" / "share" / "job-agent" / "session.json")))
 
 
-def ensure_profile():
-    WORK_PROFILE.parent.mkdir(parents=True, exist_ok=True)
-    if WORK_PROFILE.exists():
-        return  # already copied; rm -rf this dir to resync after new logins
-    shutil.copytree(BRAVE_PROFILE, WORK_PROFILE, symlinks=True)
-    lock = WORK_PROFILE / "SingletonLock"
-    if lock.exists() or lock.is_symlink():
-        try: lock.unlink()
-        except OSError: pass
+def load_cookies():
+    if not SESSION_FILE.exists():
+        sys.exit(f"no session at {SESSION_FILE} — run `python session.py` after logging in via noVNC (§2.4)")
+    return json.loads(SESSION_FILE.read_text())
 
 
 async def scrape(url: str) -> dict:
-    fetcher = StealthyFetcher(
-        user_data_dir=str(WORK_PROFILE),
-        executable_path=BRAVE_BIN,
-        headless=True,
-        args=["--disable-blink-features=AutomationControlled",
-              "--no-sandbox", "--disable-dev-shm-usage"],
-    )
-    page = await fetcher.fetch(url, network_idle=True)
+    # Own headless browser; the harvested cookies carry the logged-in session.
+    page = await DynamicFetcher.async_fetch(url, cookies=load_cookies(),
+                                            network_idle=True, headless=True)
     # JobStreet job-detail selectors. title first; fall back to h1 if the
     # data-automation attribute is renamed.
     title = (page.css_first('[data-automation="job-detail-title"]::text')
@@ -212,7 +253,6 @@ async def scrape(url: str) -> dict:
 
 
 if __name__ == "__main__":
-    ensure_profile()
     print(json.dumps(asyncio.run(scrape(sys.argv[1]))))
 ```
 
@@ -657,15 +697,16 @@ Submit returns `processing.html` immediately. The fragment polls `GET /jobs/:id/
 | `LLM_ENDPOINT` | Yes | Base URL of the LLM API |
 | `LLM_MODEL` | No | Model ID (default: `claude-sonnet-4-6`) |
 | `LLM_MOCK` | No | Set to any value to skip real LLM calls |
+| `CDP_URL` | No | CDP endpoint of the login terminal (default: `http://localhost:9223`); see §2.4 |
 
 ---
 
 ## 7. Execution Lifecycle
 
-1. **First run:** `make dev` creates `jobagent.db` and runs migrations. On the first scrape, `scrape.py` copies the Brave profile to `~/.local/share/job-agent/brave-profile` (once, ~1 minute). Every later run skips it.
+1. **First run:** bring up the login container, log into `jobstreet.co.id` once via noVNC (http://localhost:6901), then `python session.py` harvests the session cookies to `session.json` (re-run when they expire). Separately, `make dev` creates `jobagent.db` and runs migrations. Scraping runs in its own browser off `session.json` — the container can be down while scraping.
 2. **Input:** User pastes a job URL and hits **Process**. Job record created with `status='new'`.
 3. **Immediate response:** Server spawns `process_job` in the background; returns `processing.html` to the browser. HTMX prepends it to the job list. The fragment polls `/jobs/:id/card` every 2s.
-4. **Scraping:** `fetch_job` waits 3s, runs `python scrape.py <url>` as a subprocess. Status → `scraping`. The script renders the page with Brave and prints JSON on stdout.
+4. **Scraping:** `fetch_job` waits 3s, runs `python scrape.py <url>` as a subprocess. Status → `scraping`. `scrape.py` launches its own headless browser seeded with the harvested `session.json` cookies, renders the page, and prints JSON on stdout. (The KasmVNC container is not involved at scrape time.)
 5. **Generation:** `build_prompt` assembles the prompt from job description + master CV. Status → `generating`. LLM returns structured JSON CV (or mock if `LLM_MOCK` is set).
 6. **Poll resolves:** Status → `pending_approval`. The next `/card` poll returns `cv_ready.html` (no `hx-trigger`, so polling stops). If `process_job` errors at any step, status → `failed` and `/card` returns the failed card.
 7. **Review:** User clicks **Review CV →**, sees side-by-side job description and generated CV.
@@ -776,7 +817,7 @@ When two worker branches diverge (e.g. parallel workers both updated PLANS.md), 
 | `.env` | Shared (project root) | One config; Makefile sources `../.env` from any worktree |
 | `target/` | Per-worktree | Avoid concurrent-build contention; rebuilds are ~1m once, 0.3s after |
 | `jobagent.db` | Per-worktree | Each agent gets isolated test data; merge never touches DB state |
-| `~/.local/share/job-agent/brave-profile` | Shared (machine-wide) | One Brave profile copy; per-worktree would re-copy ~1GB on first scrape |
+| `login` container, `chrome_profile` volume, `session.json` | Shared (machine-wide) | One login terminal; `session.py` harvests cookies that every worktree's scraper reuses in its own browser |
 
 ### 8.7 Remote sync (publishing)
 
@@ -801,3 +842,41 @@ git -C .bare config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
 git worktree add main                       # creates main/ worktree on `main` branch
 git -C main push -u origin main             # initial publish
 ```
+
+---
+
+## 9. Deployment & CI
+
+### 9.1 Container topology
+
+The whole stack is one `docker compose` (root `docker-compose.yml`) — the only host requirement is Docker. No toolchain reproduction per machine.
+
+| Service | Image | Role | Port |
+|---------|-------|------|------|
+| `login` | `./login` (KasmVNC Chrome) | Human logs in; `session.py` harvests cookies over CDP | 6901 (noVNC, published), 9223 (CDP, internal to the compose net) |
+| `app` | `.` multi-stage: Rust + Python/Scrapling + Chromium — **M8** | Web UI; spawns `scrape.py` in-container with its own browser | 3000 (published) |
+
+Volumes: `chrome_profile` (login session), `app_data` (SQLite + `session.json`). The scraper's own Chromium stays separate from the login browser (§2.4).
+
+### 9.2 Deploy on a VM or LXC
+
+```bash
+git clone <repo> && cd JobHunting
+cp .env.example .env     # fill LLM_* ; set VNC_PW for a non-default login password
+docker compose up -d     # login terminal now; app joins in M8
+# → open http://<host>:6901, log into jobstreet.co.id, then harvest (M8: `docker compose exec app python session.py`)
+```
+
+- **VM:** install Docker, done.
+- **LXC:** enable `nesting=1` (and `keyctl=1` on some base images) on the container, install Docker inside, then the same compose.
+
+### 9.3 CI — self-hosted GitHub Actions
+
+`.github/workflows/ci.yml` runs on a **self-hosted** runner on every push/PR to `main`:
+
+1. `cargo check --all-targets` + `cargo test` — the Rust gates. Tests land in M3–M7; CI runs them automatically as they appear.
+2. Project self-checks — `AGENTS.md` under its 4 KB cap, and no secrets/DBs/`session.json` tracked.
+
+**Register a runner** (one-time, user action): repo → Settings → Actions → Runners → New self-hosted runner → follow the Linux x64 steps on the host/VM that will run jobs. The workflow uses `dtolnay/rust-toolchain`, so the runner needs no pre-installed Rust.
+
+**CD** (continuous deploy) is M8+: on push to `main`, the runner rebuilds the images and restarts the stack on the target VM. Not wired today — the app must exist first.
