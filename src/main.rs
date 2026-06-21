@@ -9,7 +9,7 @@ use axum::{
     Router,
 };
 use serde::Deserialize;
-use sqlx::SqlitePool;
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePool};
 use uuid::Uuid;
 
 use templates::{
@@ -264,9 +264,19 @@ async fn main() {
     let database_url = std::env::var("DATABASE_URL")
         .expect("DATABASE_URL missing — .env not loaded?");
 
-    let pool = SqlitePool::connect(&database_url)
-        .await
-        .expect("failed to connect to SQLite");
+    // create_if_missing(true): sqlx defaults this to false, so on a fresh volume
+    // (fresh-VM deploy) the db file doesn't exist yet and connect() panics with
+    // SQLITE_CANTOPEN. Bare metal always worked only because jobagent.db already
+    // existed from M1's setup. This lets the app self-bootstrap its db. (M10 fix.)
+    let pool = SqlitePool::connect_with(
+        database_url
+            .as_str()
+            .parse::<SqliteConnectOptions>()
+            .expect("bad DATABASE_URL")
+            .create_if_missing(true),
+    )
+    .await
+    .expect("failed to connect to SQLite");
 
     // Run migrations embedded at compile time via `sqlx::migrate!()`.
     // ponytail: this replaces the runtime `sqlx migrate run` CLI invocation —
