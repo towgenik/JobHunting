@@ -4,7 +4,7 @@
 
 Phase 1: paste an `id.jobstreet.com` job URL → scrape → LLM-tailored CV → user approves/rejects. One site, end-to-end, no scaffolding for the other 42.
 
-**Status:** M5 ✅ complete — M6 next.
+**Status:** M6 ✅ complete — M7 next.
 
 Execution order is strict. Each milestone is verifiable before the next starts. Don't skip ahead; an unverified milestone rots.
 
@@ -125,8 +125,8 @@ Foundation so M2–M7 can cook and the result deploys anywhere. Direct edits in 
 - **Done when:** decision flow is fully clickable and persists.
 
 ### M6 — Settings (master CV editor)
-- [ ] `GET /settings`, `POST /settings` (upsert on single-row table)
-- [ ] Confirm `process_job` reads the saved master CV into the prompt
+- [x] `GET /settings`, `POST /settings` (upsert on single-row table)
+- [x] Confirm `process_job` reads the saved master CV into the prompt
 - **Verify:** save master CV → run another job → generated CV references skills/experiences from the master.
 - **Done when:** master CV feeds generation.
 
