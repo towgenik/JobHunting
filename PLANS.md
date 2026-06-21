@@ -4,7 +4,7 @@
 
 Phase 1: paste an `id.jobstreet.com` job URL → scrape → LLM-tailored CV → user approves/rejects. One site, end-to-end, no scaffolding for the other 42.
 
-**Status:** M8 complete — Phase 1 done 🎉
+**Status:** Phase 1 ✅ complete + verified end-to-end with real LLM (OpenRouter/DeepSeek). Next loop: **M9** (experiences prompt defect) → **M10** (Docker deploy verify) → **M11** (CD verify).
 
 Execution order is strict. Each milestone is verifiable before the next starts. Don't skip ahead; an unverified milestone rots.
 
@@ -148,6 +148,38 @@ Foundation so M2–M7 can cook and the result deploys anywhere. Direct edits in 
 - [x] CD: on push to `main`, the self-hosted runner rebuilds + restarts the stack on the target VM (`.github/workflows/cd.yml`)
 - **Verify:** the full Phase-1 flow runs from `docker compose up` alone on a machine that has nothing but Docker.
 - **Done when:** deployable to any Linux VM/LXC with `git clone && docker compose up`.
+
+---
+
+### M9 — Fix experiences prompt fidelity (observed defect)
+
+The 2026-06-21 end-to-end verify returned an **empty `experiences[]`** — summary + skills were job-derived, but DeepSeek skipped experiences entirely. The generated CV is incomplete.
+
+- [ ] Tighten `build_prompt` in `src/generate.rs` — explicitly require ≥1 experience, name every field, show the exact JSON shape. Consider a stricter system instruction or a one-shot example.
+- [ ] Re-run a real `id.jobstreet.com` URL → confirm `experiences` is non-empty and derived from the JD
+- **Verify:** `experiences` array has ≥1 entry (company + role + bullet_points) for 3/3 sample URLs.
+- **Done when:** a generated CV includes experiences, not just summary + skills.
+
+### M10 — Verify containerized deploy (M8 unverified)
+
+M8 wrote the Dockerfile + compose but the full stack was never run in containers — only built.
+
+- [ ] `docker compose up --build` — both `login` + `app` start cleanly
+- [ ] Get `session.json` into the `app_data` volume (copy from host, or `docker compose exec app python session.py` after logging in via `:6901`)
+- [ ] Paste a JobStreet URL at `:3000` → CV generates inside the container
+- [ ] Fix anything that only works on bare metal (paths, sandbox, env)
+- **Verify:** full Phase-1 flow works from `docker compose up` on this host.
+- **Done when:** containerized end-to-end is **proven**, not just built. Update Architecture §9 + `docker-multistage` skill with anything that broke.
+
+### M11 — Verify CD pipeline
+
+`.github/workflows/cd.yml` was written in M8 but never triggered.
+
+- [ ] Push a trivial change to `main` → confirm the CD run executes on the self-hosted runner
+- [ ] Confirm it rebuilds + restarts the stack (`docker compose up -d --build`)
+- [ ] Confirm zero manual steps end-to-end
+- **Verify:** a push to `main` results in a redeployed stack.
+- **Done when:** CD is **proven**, not just written.
 
 ---
 
