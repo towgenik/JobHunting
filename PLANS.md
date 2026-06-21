@@ -2,7 +2,7 @@
 
 ## Goal
 
-Phase 1: paste a `jobstreet.co.id` job URL → scrape → LLM-tailored CV → user approves/rejects. One site, end-to-end, no scaffolding for the other 42.
+Phase 1: paste an `id.jobstreet.com` job URL → scrape → LLM-tailored CV → user approves/rejects. One site, end-to-end, no scaffolding for the other 42.
 
 **Status:** Prep ✅ complete — container scaffold, CI, self-improvement layer committed + pushed. Runner online, CI green, login bridge-networking confirmed. **Next: dispatch M2 (scrape spike)**.
 
@@ -90,7 +90,7 @@ Foundation so M2–M7 can cook and the result deploys anywhere. Direct edits in 
 ### M2 — Scrape spike (standalone, before any Rust)
 - [ ] `pip install "scrapling[all]" && scrapling install` — fetchers, `extract` CLI, browsers (bare `pip install scrapling` lacks fetchers → `ModuleNotFoundError`)
 - [ ] `docker compose up -d login` — login container boots (root compose); `curl http://localhost:9223/json/version` returns JSON (CDP is the harvest channel, **not** the scrape path)
-- [ ] Log into `jobstreet.co.id` once via the noVNC UI (http://localhost:6901)
+- [ ] Log into `id.jobstreet.com` once via the noVNC UI (http://localhost:6901)
 - [ ] `python session.py` — harvests cookies to `session.json` (§2.4); confirm it prints a non-zero cookie count
 - [ ] Probe before wiring selectors: `scrapling extract fetch '<url>' probe.md` — dumps the rendered body, confirms the page loads behind the login and shows what's visible
 - [ ] `scrape.py` from §4 (own browser + harvested cookies), runnable on its own with the login container **stopped** — proves the scrape path is decoupled
@@ -105,7 +105,7 @@ Foundation so M2–M7 can cook and the result deploys anywhere. Direct edits in 
 *v1 plan's M3+M4 merged — `cargo check` alone proves nothing; the only real verification is the end-to-end happy path.*
 
 - [ ] `src/db.rs`: every function referenced in §5 (`create_job_stub`, `set_status`, `get_job_url`, `update_job_data`, `get_status`, `save_cv_draft`, `get_master_cv`, `render_cv_ready`, settings get/upsert). Plain `sqlx::query` — no compile-time macro dance unless a typo bites.
-- [ ] `src/templates.rs` + `templates/`: askama structs from §5.3; HTML from §6 (base, index, job, settings, fragments/processing, fragments/cv_ready). Dashboard input includes the `pattern="…jobstreet.co.id/…"` guard from §6.2.
+- [ ] `src/templates.rs` + `templates/`: askama structs from §5.3; HTML from §6 (base, index, job, settings, fragments/processing, fragments/cv_ready). Dashboard input includes the `pattern="…id.jobstreet.com/…"` guard from §6.2.
 - [ ] `src/generate.rs`: `process_job`, `fetch_job`, `scrape_once`, `build_prompt`, `call_llm` (mock branch only).
 - [ ] Routes in `src/main.rs`: `POST /jobs` (with `is_phase1_url` host guard), `GET /jobs/:id/card`, `GET /`.
 - [ ] HTMX polling card lifecycle: processing → cv_ready (stops polling).

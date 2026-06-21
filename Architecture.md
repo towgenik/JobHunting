@@ -10,11 +10,11 @@ This document outlines the complete architecture for an autonomous, AI-driven jo
 
 | Phase | Scope | Exit criteria |
 |-------|-------|---------------|
-| **1 (current)** | **JobStreet Indonesia** (`jobstreet.co.id`) only — individual job URL → scrape → CV → approve/reject | One JobStreet URL flows through the full UI without manual intervention; selectors stable across 10 sample URLs |
+| **1 (current)** | **JobStreet Indonesia** (`id.jobstreet.com`) only — individual job URL → scrape → CV → approve/reject | One JobStreet URL flows through the full UI without manual intervention; selectors stable across 10 sample URLs |
 | 2 (later) | Add sites one at a time, ordered by the xlsx category priority: General first (Karir.com, Kalibrr), then Tech (Glints), then the rest | Each site gets its own selector profile only when its first URL is tested |
 | 3 (later) | Listing/discovery mode (scrape `…/jobs` index pages, surface many jobs at once) | Only if Phase 1+2 per-URL flow proves insufficient — YAGNI until then |
 
-**Phase 1 contract:** the user pastes a single `https://www.jobstreet.co.id/jobs/…` URL. Everything outside that — other domains, listing pages, batch imports — is out of scope and should be rejected with a clear error, not silently attempted.
+**Phase 1 contract:** the user pastes a single `https://id.jobstreet.com/jobs/…` URL. Everything outside that — other domains, listing pages, batch imports — is out of scope and should be rejected with a clear error, not silently attempted.
 
 ### 1.2. Technology Stack
 | Layer | Choice | Why |
@@ -143,7 +143,7 @@ The KasmVNC container exists for one thing: a **real human logs into the job boa
    ```bash
    docker compose up -d login    # root compose is canonical (§9)
    # noVNC UI → http://localhost:6901   (password from VNC_PW, default admin1)
-   # …log into jobstreet.co.id in the noVNC browser…
+   # …log into id.jobstreet.com in the noVNC browser…
    python session.py        # harvests cookies → ~/.local/share/job-agent/session.json
    ```
    The login itself persists in the named volume `chrome_profile` across restarts and rebuilds; `session.py` just reads the current cookies out over CDP.
@@ -189,13 +189,13 @@ INSERT INTO settings (id, master_cv) VALUES (1, '');
 
 ## 4. Python Scraper
 
-**Phase 1 scope:** a plain CLI script invoked once per job with a single `jobstreet.co.id` URL. Not a service, not a crawler — Rust spawns it as a subprocess: `python scrape.py <url>`. It prints `{"title", "description"}` as JSON on stdout; any failure exits non-zero with a traceback on stderr, which Rust logs. Non-JobStreet URLs should be rejected by the caller (Rust) before reaching the scraper; the scraper assumes a JobStreet job-detail page. The KasmVNC container is a **login terminal only** — driving page loads through the interactive VNC browser is slow and inconsistent. Instead `session.py` harvests the logged-in cookies once over CDP (§2.4), and `scrape.py` runs its own headless browser seeded with those cookies.
+**Phase 1 scope:** a plain CLI script invoked once per job with a single `id.jobstreet.com` URL. Not a service, not a crawler — Rust spawns it as a subprocess: `python scrape.py <url>`. It prints `{"title", "description"}` as JSON on stdout; any failure exits non-zero with a traceback on stderr, which Rust logs. Non-JobStreet URLs should be rejected by the caller (Rust) before reaching the scraper; the scraper assumes a JobStreet job-detail page. The KasmVNC container is a **login terminal only** — driving page loads through the interactive VNC browser is slow and inconsistent. Instead `session.py` harvests the logged-in cookies once over CDP (§2.4), and `scrape.py` runs its own headless browser seeded with those cookies.
 
-Selectors below are tuned for `jobstreet.co.id` job-detail pages. They will need adjustment per site in Phase 2; do not generalize prematurely.
+Selectors below are tuned for `id.jobstreet.com` job-detail pages. They will need adjustment per site in Phase 2; do not generalize prematurely.
 
 **`session.py`** — harvest the login session from the KasmVNC Chrome over CDP. Run after logging in via noVNC; re-run when cookies expire. The container can be down afterwards.
 ```python
-# Harvests jobstreet.co.id login cookies from the KasmVNC Chrome (over CDP) → session.json.
+# Harvests id.jobstreet.com login cookies from the KasmVNC Chrome (over CDP) → session.json.
 # This is the ONLY use of the container's CDP port; scraping never drives the VNC browser.
 # ponytail: raw playwright connect_over_cdp — scrapling already depends on playwright
 import json, os
@@ -203,7 +203,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 CDP_URL = os.environ.get("CDP_URL", "http://localhost:9223")
-HOST    = os.environ.get("SESSION_HOST", "jobstreet.co.id")
+HOST    = os.environ.get("SESSION_HOST", "jobstreet.com")
 OUT     = Path(os.environ.get("SESSION_FILE",
              str(Path.home() / ".local" / "share" / "job-agent" / "session.json")))
 
@@ -485,14 +485,14 @@ async fn call_llm(app: &AppState, prompt: &str) -> Result<Value> {
 **`src/main.rs` (route handlers)**
 ```rust
 // POST /jobs — create stub record, spawn background task, return polling card immediately.
-// ponytail: Phase 1 — reject non-jobstreet.co.id URLs at the boundary, not in the scraper
+// ponytail: Phase 1 — reject non-id.jobstreet.com URLs at the boundary, not in the scraper
 async fn submit_job(
     State(app): State<AppState>,
     Form(body): Form<JobForm>,
 ) -> impl IntoResponse {
     if !is_phase1_url(&body.url) {
         return Html(
-            "<article><span class=\"error\">Phase 1 supports jobstreet.co.id URLs only.</span></article>"
+            "<article><span class=\"error\">Phase 1 supports id.jobstreet.com URLs only.</span></article>"
         ).into_response();
     }
     let job_id = db::create_job_stub(&app.db, &body.url).await
@@ -514,7 +514,7 @@ async fn submit_job(
 // ponytail: hardcoded host allowlist; replace with config-driven list in Phase 2
 fn is_phase1_url(url: &str) -> bool {
     reqwest::Url::parse(url).ok()
-        .and_then(|u| u.host_str().map(|h| h == "www.jobstreet.co.id" || h == "jobstreet.co.id"))
+        .and_then(|u| u.host_str().map(|h| h == "id.jobstreet.com"))
         .unwrap_or(false)
 }
 
@@ -590,9 +590,9 @@ pub fn router(state: AppState) -> Router {
 {% block content %}
 <form hx-post="/jobs" hx-target="#job-list" hx-swap="afterbegin">
   <input name="url" type="url"
-         placeholder="Paste a jobstreet.co.id job URL…"
-         pattern="https?://([a-z.]+\.)?jobstreet\.co\.id/.*"
-         title="Phase 1 supports jobstreet.co.id URLs only"
+         placeholder="Paste an id.jobstreet.com job URL…"
+         pattern="https://id\.jobstreet\.com/.*"
+         title="Phase 1 supports id.jobstreet.com URLs only"
          required>
   <button type="submit">Process</button>
 </form>
@@ -703,7 +703,7 @@ Submit returns `processing.html` immediately. The fragment polls `GET /jobs/:id/
 
 ## 7. Execution Lifecycle
 
-1. **First run:** bring up the login container, log into `jobstreet.co.id` once via noVNC (http://localhost:6901), then `python session.py` harvests the session cookies to `session.json` (re-run when they expire). Separately, `make dev` creates `jobagent.db` and runs migrations. Scraping runs in its own browser off `session.json` — the container can be down while scraping.
+1. **First run:** bring up the login container, log into `id.jobstreet.com` once via noVNC (http://localhost:6901), then `python session.py` harvests the session cookies to `session.json` (re-run when they expire). Separately, `make dev` creates `jobagent.db` and runs migrations. Scraping runs in its own browser off `session.json` — the container can be down while scraping.
 2. **Input:** User pastes a job URL and hits **Process**. Job record created with `status='new'`.
 3. **Immediate response:** Server spawns `process_job` in the background; returns `processing.html` to the browser. HTMX prepends it to the job list. The fragment polls `/jobs/:id/card` every 2s.
 4. **Scraping:** `fetch_job` waits 3s, runs `python scrape.py <url>` as a subprocess. Status → `scraping`. `scrape.py` launches its own headless browser seeded with the harvested `session.json` cookies, renders the page, and prints JSON on stdout. (The KasmVNC container is not involved at scrape time.)
@@ -864,7 +864,7 @@ Volumes: `chrome_profile` (login session), `app_data` (SQLite + `session.json`).
 git clone <repo> && cd JobHunting
 cp .env.example .env     # fill LLM_* ; set VNC_PW for a non-default login password
 docker compose up -d     # login terminal now; app joins in M8
-# → open http://<host>:6901, log into jobstreet.co.id, then harvest (M8: `docker compose exec app python session.py`)
+# → open http://<host>:6901, log into id.jobstreet.com, then harvest (M8: `docker compose exec app python session.py`)
 ```
 
 - **VM:** install Docker, done.
