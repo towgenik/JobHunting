@@ -1,21 +1,24 @@
 # Multi-stage Dockerfile for the JobHunting app service (Architecture §9.1, M8).
 #
 # Stage 1 (builder): compile the Rust binary (with sqlx migrations embedded).
-# Stage 2 (runtime): Ubuntu 22.04 with Python + scrapling[all] + Chromium.
+# Stage 2 (runtime): Debian bookworm with Python + scrapling[all] + Chromium.
 #   The binary and Python scripts are copied in; both run from /app.
 #
 # Build context: repo root (docker build .)
 
 # ── Stage 1: Rust builder ────────────────────────────────────────────────────
-# alpine = musl libc -> the release binary is STATIC, so it runs on ANY runtime
-# image regardless of glibc version. Previously rust:*-slim (Debian trixie,
-# glibc 2.41) produced a binary the ubuntu:22.04 runtime (glibc 2.35) could not
-# load ("GLIBC_2.39 not found"). Static musl kills that whole class of bug —
-# see docker-multistage skill (M10 gotcha).
-# Note: rust 1.85+ is required (edition2024 cargo feature, needed by transitive
-# deps idna_adapter/home); 1.95 gives headroom. rust:1.95-alpine ships musl +
-# the C toolchain libsqlite3-sys's bundled build needs.
-FROM rust:1.95-alpine AS builder
+# Match builder + runtime to the SAME distro (Debian bookworm, glibc 2.36) so a
+# glibc mismatch is structurally impossible. M10 history:
+#  - rust:*-slim (Debian trixie, glibc 2.41) over ubuntu:22.04 (glibc 2.35):
+#    binary needed GLIBC_2.39, wouldn't start.
+#  - rust:1.95-alpine (musl, static binary): started, but bundled-SQLite could
+#    no longer open/create *files* in-container (only sqlite::memory: worked),
+#    so every file-DB URL panicked SQLITE_CANTOPEN.
+#  - bookworm-on-bookworm (2.36 == 2.36): the boring match that works, and glibc
+#    is what bare-metal M3-M9 ran against with file DBs. See docker-multistage skill.
+# rust 1.85+ is required (edition2024 cargo feature, needed by transitive deps
+# idna_adapter/home); 1.95 gives headroom.
+FROM rust:1.95-slim-bookworm AS builder
 
 WORKDIR /build
 
@@ -45,7 +48,9 @@ COPY migrations/ migrations/
 RUN touch src/main.rs && cargo build --release
 
 # ── Stage 2: runtime ─────────────────────────────────────────────────────────
-FROM ubuntu:22.04 AS runtime
+# Debian bookworm — glibc 2.36, same as the builder above. Matching distros is
+# the whole point (see Stage 1 comment): no GLIBC_nnn-not-found, ever.
+FROM debian:bookworm AS runtime
 
 # Avoid interactive prompts from apt/tzdata during build.
 ENV DEBIAN_FRONTEND=noninteractive
@@ -84,7 +89,9 @@ RUN apt-get update && \
 # Install scrapling with all extras; this pulls in playwright.
 # Pin to avoid surprise breakage — bump intentionally when upgrading.
 # 0.4.9 is the version verified working for this project (see scrapling-jobstreet skill).
-RUN pip3 install --no-cache-dir "scrapling[all]==0.4.9"
+# --break-system-packages: bookworm's pip enforces PEP 668 (externally-managed
+# env). This is a single-user container with one Python consumer — fine.
+RUN pip3 install --no-cache-dir --break-system-packages "scrapling[all]==0.4.9"
 
 # Install Playwright's Chromium browser binary (the one scrapling's DynamicFetcher uses).
 # We use `playwright install chromium` directly instead of `scrapling install` because:
