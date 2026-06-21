@@ -778,11 +778,26 @@ When two worker branches diverge (e.g. parallel workers both updated PLANS.md), 
 | `jobagent.db` | Per-worktree | Each agent gets isolated test data; merge never touches DB state |
 | `~/.local/share/job-agent/brave-profile` | Shared (machine-wide) | One Brave profile copy; per-worktree would re-copy ~1GB on first scrape |
 
-### 8.7 Repo setup commands (one-time, already applied)
+### 8.7 Remote sync (publishing)
+
+The bare hub has `origin → https://github.com/menggatot/JobHunting.git` (private). **Only the controller pushes, only from `main/`, only after a clean integration, only on explicit user instruction.** Workers never see `origin`.
+
+```bash
+# Controller, after a clean integration commit on main/
+cd main
+git push origin main
+```
+
+If working solo, no `git pull` needed before push — nobody else writes to GitHub. If collaborating, `git pull --rebase origin main` first. Never push worker branches directly; the integration flow is `worker → main (merge) → origin (push)` — GitHub only ever sees the polished history of `main`.
+
+### 8.8 Repo setup commands (one-time, already applied)
 
 ```bash
 mkdir JobHunting && cd JobHunting
 git clone --bare <source> .bare
-echo "gitdir: ./.bare" > .git          # so `git worktree …` works from project root
-git worktree add main                   # creates main/ worktree on `main` branch
+echo "gitdir: ./.bare" > .git              # so `git worktree …` works from project root
+git -C .bare remote add origin https://github.com/<user>/JobHunting.git
+git -C .bare config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
+git worktree add main                       # creates main/ worktree on `main` branch
+git -C main push -u origin main             # initial publish
 ```

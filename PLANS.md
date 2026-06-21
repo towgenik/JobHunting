@@ -25,9 +25,12 @@ make dev                                  # sources ../.env, builds in local tar
 # Finish: merge from the main worktree
 cd ../main && git merge m2-scrape
 git worktree remove ../m2-scrape && git branch -d m2-scrape
+
+# Publish (controller only, on user instruction — Architecture §8.7)
+git push origin main
 ```
 
-Shared state lives at the project root (`.env`); per-worktree state (`target/`, `jobagent.db`) is isolated and disposable.
+Shared state lives at the project root (`.env`); per-worktree state (`target/`, `jobagent.db`) is isolated and disposable. GitHub remote (`origin`) is private at `menggatot/JobHunting`; only the controller pushes, only from `main/`.
 
 ---
 
