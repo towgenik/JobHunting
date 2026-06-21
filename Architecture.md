@@ -675,9 +675,32 @@ Submit returns `processing.html` immediately. The fragment polls `GET /jobs/:id/
 
 ## 8. Multi-Agent Workspace
 
-Multiple agents work this repo in parallel — they cannot share a single working directory without colliding on file edits and the `target/` build cache. The project uses a **bare repo + worktree** layout: one bare hub holds all commits and branches; each agent works in its own worktree (a sibling directory with a full file checkout but sharing commit history).
+Multiple agents work this repo in parallel — they cannot share a single working directory without colliding on file edits and the `target/` build cache. The project uses a **bare repo + worktree** layout with a **two-layer agent model**:
 
-**Agent action card:** `.opencode/skills/worktree/SKILL.md` — the short-form workflow every agent reads before editing files. This section is the reference; the skill is the dispatch.
+- **Controller** — one orchestrator at the project root (`JobHunting/`). Manages worktrees, dispatches worker agents, integrates their work, resolves conflicts. **Never writes project code.**
+- **Workers** — one agent per milestone worktree (`m2-scrape/`, `m3-backend/`, …). Does the actual code work, verifies, commits, signals READY. **Never merges.**
+
+Each layer has its own skills in its own `.opencode/`:
+
+```
+JobHunting/                              ← controller operates here
+├── .bare/                               ← bare hub (commit/branch storage)
+├── .git                                 ← file: `gitdir: ./.bare`
+├── .env                                 ← shared dev env (workers source via ../.env)
+├── .opencode/skills/orchestrate/SKILL.md ← controller's skill (machine-local; not in any worktree)
+├── main/                                ← integration worktree on `main`
+│   └── .opencode/skills/worktree/SKILL.md ← worker skill (committed; propagates to new worktrees)
+└── <slug>/                              ← per-milestone worker worktree
+    └── .opencode/skills/worktree/SKILL.md ← copy from main; worker may refine
+```
+
+**Skill locations:**
+- Controller skill lives at project root's `.opencode/` — **not inside any worktree**, so it isn't tracked in git and doesn't propagate to workers.
+- Worker skill lives inside the `main/` worktree's `.opencode/` — **committed and version-controlled**, so every `git worktree add … main` gets a copy, and worker refinements propagate back via merge.
+
+**Agent action cards:**
+- Controller: `.opencode/skills/orchestrate/SKILL.md` at the project root
+- Worker: `.opencode/skills/worktree/SKILL.md` inside every worktree
 
 ### 8.1 Layout
 
@@ -700,31 +723,52 @@ JobHunting/                  ← project root; no working files live here
 | Shared history | All worktrees share the bare hub; commits in one are visible to others via `git log --all` immediately. No push/pull between them. |
 | Cheap context switch | `cd ../m3-backend` switches branch+files atomically; no stashing. |
 
-### 8.3 Starting a milestone (per-agent)
+### 8.3 Dispatching a milestone (controller → worker)
+
+The controller picks the next milestone from `PLANS.md`, creates the worktree, and spawns a worker agent inside it:
 
 ```bash
-# From project root
+# Controller, from project root
 git worktree add m2-scrape -b m2-scrape main
-cd m2-scrape
-make dev                    # sources ../.env, builds in local target/, runs migration
+# spawn worker agent with cwd=m2-scrape/, briefed to read .opencode/skills/worktree/SKILL.md
 ```
 
-The new worktree shares `.bare`'s history. `make dev` works out of the box because `../.env` resolves to the project root config.
+The worker reads its skill, runs `make dev` to verify boot, does the work, commits. `make dev` works out of the box because `../.env` resolves to the project root config.
 
-### 8.4 Finishing a milestone (integration)
+### 8.4 Signaling completion (worker → controller)
 
-When the milestone's verify step passes, merge into `main` from the `main` worktree:
+The worker never merges. When its PLANS.md "Done when" criteria are met, it:
+1. Updates PLANS.md in its worktree (checkboxes + Status line)
+2. Commits with `<slug> complete`
+3. Prints `READY: <slug> ready for merge` and stops
+
+The controller then integrates:
 
 ```bash
-cd ../main
+# Controller, from project root
+cd main
 git merge m2-scrape
+# resolve conflicts per §8.5
 git worktree remove ../m2-scrape
 git branch -d m2-scrape
 ```
 
+If the worker cannot finish, it prints `BLOCKED: <slug> — <reason>` and stops; the controller escalates or sends the worker back.
+
 `main` is the only branch that ever gets pushed to a remote (when one is added). The bare hub is the local source of truth — never push between worktrees.
 
-### 8.5 Shared vs per-worktree state
+### 8.5 Conflict resolution (controller)
+
+When two worker branches diverge (e.g. parallel workers both updated PLANS.md), the controller resolves by category:
+
+| Conflict location | Resolution |
+|-------------------|------------|
+| Code in the milestone's scope | Worker's version wins |
+| Code outside the milestone's scope | `main` wins; flag as scope creep to user |
+| `PLANS.md` | Union both sides: checkboxes stay checked if either side checked them; keep more recent Status line |
+| `.opencode/skills/` | Prefer the more specific/refined version; if meaningful divergence, reconcile manually and document in commit message |
+
+### 8.6 Shared vs per-worktree state
 
 | Path | Scope | Why |
 |------|-------|-----|
@@ -733,7 +777,7 @@ git branch -d m2-scrape
 | `jobagent.db` | Per-worktree | Each agent gets isolated test data; merge never touches DB state |
 | `~/.local/share/job-agent/brave-profile` | Shared (machine-wide) | One Brave profile copy; per-worktree would re-copy ~1GB on first scrape |
 
-### 8.6 Repo setup commands (one-time, already applied)
+### 8.7 Repo setup commands (one-time, already applied)
 
 ```bash
 mkdir JobHunting && cd JobHunting

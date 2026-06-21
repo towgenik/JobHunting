@@ -2,91 +2,118 @@
 name: worktree
 description: >
   Guide agents working on the JobHunting project to claim an isolated git
-  worktree before writing any code. Use whenever an agent starts work on a
-  milestone in PLANS.md, when an agent says "I'll work on M2" / "picking up
-  the scrape spike" / similar, or whenever an agent is about to edit project
-  files. Prevents multiple agents from colliding in one working directory.
+  worktree before writing any code. Use whenever an agent is dispatched to
+  work on a milestone in PLANS.md, when an agent says "I'll work on M2" /
+  "picking up the scrape spike" / similar, or whenever an agent is about to
+  edit project files. Prevents multiple agents from colliding in one
+  working directory. Workers never merge — they signal READY and the
+  controller at the project root integrates.
 license: MIT
 ---
 
-# Worktree Workflow (JobHunting)
+# Worktree Workflow (JobHunting Worker)
 
-Bare hub + worktree layout. Full rationale in `Architecture.md` §8; this is
-the action card. **Read this before editing any file in this repo.**
+You are a worker. You live inside one worktree (`<slug>/`) and own exactly
+that directory for exactly one milestone. The controller at the project root
+dispatched you and will integrate your work — **you do not merge, you do not
+remove your worktree.**
 
-## Layout (already set up — don't recreate)
+Full rationale in `Architecture.md` §8; this is the action card.
+
+## Layout (your workspace)
 
 ```
-JobHunting/                  ← project root; no working files live here
-├── .bare/                   ← bare hub (commit/branch storage)
-├── .git                     ← file: `gitdir: ./.bare` (git works from root)
-├── .env                     ← shared dev env (gitignored)
-├── main/                    ← integration worktree on `main` — don't edit directly
-└── <slug>/                  ← your worktree (you create one per milestone)
+JobHunting/                  ← project root; the controller lives here
+├── .bare/                   ← bare hub (don't touch directly)
+├── .env                     ← shared dev env you source via ../.env
+├── main/                    ← integration branch; don't edit directly
+├── .opencode/skills/        ← controller's skills; not yours
+└── <slug>/                  ← YOUR worktree (you were spawned here)
+    └── .opencode/skills/worktree/SKILL.md   ← this file
 ```
 
-## Start a milestone
+## Start (you've already been dispatched)
 
-From the project root (`JobHunting/`):
+If you're reading this, the controller already created your worktree. Verify
+boot, then work:
 
 ```bash
-git worktree add <slug> -b <slug> main   # slug e.g. m2-scrape, m3-backend
-cd <slug>
-make dev                                 # sources ../.env; first build ~1min, after ~0.3s
+make dev                                  # sources ../.env; first build ~1min
 ```
 
-Then in another shell: `curl -i localhost:3000/` → expect `200 OK` body `ok`.
-Stop the server (Ctrl-C) once verified. Now do the work.
+In another shell: `curl -i localhost:3000/` → expect `200 OK`. Stop the
+server once verified. Now do the milestone work.
 
 Commit normally inside the worktree — the bare hub sees your commits
-immediately. No `git push` between worktrees, ever.
+immediately. No `git push`, no merge, ever.
 
-## Finish a milestone
+## Signal READY when done
 
-Only when the milestone's "Done when" criteria in `PLANS.md` are met:
+When your milestone's "Done when" criteria in `PLANS.md` are met:
 
-```bash
-cd ../main
-git merge <slug>
-git worktree remove ../<slug>
-git branch -d <slug>
+1. Update `PLANS.md` in your worktree:
+   - Check the milestone's boxes (`- [x]`)
+   - Bump the Status line (e.g. "M2 complete — M3 next")
+
+2. Commit everything:
+   ```bash
+   git add -A
+   git commit -m "<slug> complete"
+   ```
+
+3. Print this exact line as your final output so the controller can detect
+   it:
+   ```
+   READY: <slug> ready for merge
+   ```
+
+4. **STOP.** Do not merge. Do not remove your worktree. Do not start the
+   next milestone. Wait for the controller to integrate.
+
+## Signal BLOCKED if you can't finish
+
+If you cannot complete the milestone (verify step won't pass, blockers
+outside your scope, missing prerequisites), print:
 ```
-
-Then in `main/`: update PLANS.md checkboxes and the Status line, commit,
-that's the integration commit.
+BLOCKED: <slug> — <one-sentence reason>
+```
+and stop. The controller will escalate or send you back with guidance.
 
 ## Hard rules
 
-- **Never edit `main/`** except post-merge bookkeeping (PLANS.md status).
-- **Never edit other worktrees** — they belong to other agents.
-- **Never push between worktrees.** Merging via `main` is the only path.
-- **Never create worktrees speculatively.** Create at milestone start, remove
-  at milestone end. No `m5-…` dirs lying around for work that hasn't begun.
+- **Stay in your worktree.** Never edit `main/`, never edit other worktrees,
+  never edit the project root's `.opencode/`.
+- **Never run `git merge`, `git worktree remove`, or `git branch -d`.** Those
+  are the controller's. You commit; you don't integrate.
+- **Never push to a remote.** Local-only.
 - **Never reconfigure paths.** `../.env` shared, `target/` per-worktree,
   `jobagent.db` per-worktree — these are correct (Architecture §8.5).
-- **Never run `make dev` from the project root** — only from inside a
-  worktree.
+- **Never edit `.env`** — that's the user's config.
+- **Never refine the controller's skills** (`.opencode/skills/orchestrate/`
+  at project root). That's not your layer.
+- **You MAY refine this skill** (`.opencode/skills/worktree/SKILL.md` in your
+  worktree) if you learned something useful — the controller will merge it.
 
-## Self-check before merging
+## Self-check before signaling READY
 
 - [ ] `make dev` boots clean in your worktree
 - [ ] PLANS.md "Verify" step for this milestone passes
-- [ ] `git status` clean in your worktree
+- [ ] PLANS.md "Done when" criteria actually met (don't self-deceive)
+- [ ] `git status` clean
 - [ ] No edits leaked outside your worktree (`cd ../main && git status`
       shows nothing caused by you)
-- [ ] PLANS.md checkboxes + Status line updated in `main/`
+- [ ] PLANS.md checkboxes + Status line updated in your worktree
 
-If any box unchecked, **do not merge**.
+If any unchecked, **do not signal READY**.
 
 ## Anti-patterns to refuse
 
-If you (the agent) notice yourself doing any of these, stop and re-read this
-skill:
+If you notice yourself doing any of these, stop and re-read this skill:
 
-- Editing files in `main/` because "it's faster" — no it isn't, it collides.
+- Merging your own branch to main — that's the controller's job.
+- Editing `main/` because "it's faster" — it breaks isolation.
 - Sharing `target/` via symlink "to save build time" — concurrent builds
   corrupt it.
-- Creating a worktree named after a person/tool instead of the milestone —
-  name = milestone slug, always.
-- Starting M3 before M2's "Done when" — milestones are strictly ordered
-  (PLANS.md).
+- Starting the next milestone without the controller dispatching you —
+  PLANS.md order is strict.
+- Signaling READY with uncommitted changes — `git status` must be clean.
