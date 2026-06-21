@@ -1,13 +1,16 @@
 # Multi-stage Dockerfile for the JobHunting app service (Architecture §9.1, M8).
 #
-# Stage 1 (builder): compile the Rust binary + sqlx-cli with the full toolchain.
-# Stage 2 (runtime): Ubuntu 22.04 with Python + scrapling[all] + Playwright Chromium.
+# Stage 1 (builder): compile the Rust binary (with sqlx migrations embedded).
+# Stage 2 (runtime): Ubuntu 22.04 with Python + scrapling[all] + Chromium.
 #   The binary and Python scripts are copied in; both run from /app.
 #
 # Build context: repo root (docker build .)
 
 # ── Stage 1: Rust builder ────────────────────────────────────────────────────
-FROM rust:1.82-slim AS builder
+# Note: rust:1.82-slim is too old — current transitive deps (idna_adapter,
+# home) require the edition2024 cargo feature stabilized in rustc 1.85.
+# 1.95 gives headroom; bump intentionally when upgrading.
+FROM rust:1.95-slim AS builder
 
 WORKDIR /build
 
@@ -18,9 +21,11 @@ RUN apt-get update && \
         libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install sqlx-cli (needed to run migrations in the runtime container).
-# sqlite feature only — keeps the binary small.
-RUN cargo install sqlx-cli --no-default-features --features sqlite
+# NOTE: sqlx-cli is NOT installed here. Migrations are embedded into the Rust
+# binary at build time via `sqlx::migrate!("./migrations")` in src/main.rs and
+# run on startup. This avoids the recurring build breakage from
+# `cargo install sqlx-cli` pulling a version that needs a newer rustc than the
+# image ships (M10 gotcha — see docker-multistage skill).
 
 # Cache dependencies: copy manifests first, build deps only, then copy source.
 COPY Cargo.toml Cargo.lock ./
@@ -91,20 +96,21 @@ RUN python3 -m playwright install chromium
 # Create the app working directory.
 WORKDIR /app
 
-# Copy the compiled binaries from the builder stage.
+# Copy the compiled binary from the builder stage.
+# Migrations are already embedded inside it via sqlx::migrate!() — no sqlx-cli
+# binary needed at runtime. Askama templates are also compiled in at build time
+# via #[template(path = "...")], so neither templates/ nor migrations/ need to
+# be copied to the runtime image.
 COPY --from=builder /build/target/release/job-agent /app/job-agent
-COPY --from=builder /usr/local/cargo/bin/sqlx /usr/local/bin/sqlx
 
-# Copy Python scripts and supporting assets the binary needs at runtime.
+# Copy Python scripts the binary shells out to at runtime (scrape.py).
 COPY scrape.py session.py ./
-COPY templates/ templates/
-COPY migrations/ migrations/
 
 # Expose the web UI port.
 EXPOSE 3000
 
-# Default entry: run migrations then start the server.
+# The binary runs embedded migrations on startup, so CMD is just the server.
 # DATABASE_URL and LLM_* are supplied via compose environment.
 # SESSION_FILE defaults to /data/session.json (overridden via compose env).
 ENV SESSION_FILE=/data/session.json
-CMD sqlx migrate run && /app/job-agent
+CMD ["/app/job-agent"]

@@ -72,7 +72,11 @@ async fn fetch_job(url: &str) -> Result<Value> {
 }
 
 async fn scrape_once(url: &str) -> Result<Value> {
-    let out = tokio::process::Command::new("python")
+    // "python3" — the canonical binary name on Ubuntu/Debian. The bare "python"
+    // is not on the PATH in ubuntu:22.04 unless python-is-python3 is installed,
+    // which caused scrapes to fail inside the container with "program not found"
+    // (M10 gotcha — see docker-multistage skill).
+    let out = tokio::process::Command::new("python3")
         .arg("scrape.py")
         .arg(url)
         .output()

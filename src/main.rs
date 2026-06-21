@@ -268,6 +268,16 @@ async fn main() {
         .await
         .expect("failed to connect to SQLite");
 
+    // Run migrations embedded at compile time via `sqlx::migrate!()`.
+    // ponytail: this replaces the runtime `sqlx migrate run` CLI invocation —
+    // no sqlx-cli binary needed in the container, no MSRV-breakage from
+    // `cargo install sqlx-cli` pulling a too-new toolchain (M10 gotcha).
+    // The macro reads ./migrations at build time and bakes them into the binary.
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .expect("failed to run migrations");
+
     let state = AppState::from_env(pool);
 
     let app = Router::new()
