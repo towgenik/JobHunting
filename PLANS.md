@@ -4,7 +4,7 @@
 
 Phase 1: paste an `id.jobstreet.com` job URL → scrape → LLM-tailored CV → user approves/rejects. One site, end-to-end, no scaffolding for the other 42.
 
-**Status:** M10 complete — M11 next. Phase 1 ✅ + containerized deploy ✅ proven end-to-end (fresh-volume `docker compose up` → paste JobStreet URL → real LLM CV with non-empty experiences, all in-container). M10 fixed three container-only bugs (glibc mismatch, `create_if_missing` default, stale-name/port conflicts) — see `docker-multistage` skill. Next: **M11** (CD pipeline verify).
+**Status:** ✅ **M11 complete — Phase 1 fully done.** Containerized deploy (M10) + CI/CD (Prep + M11) all proven. M10 + M11 verified 2026-06-22: fresh-volume `docker compose up` → paste JobStreet URL → real-LLM CV with non-empty experiences (all in-container); push to `main` → self-hosted runner `docker compose up -d --build` → serving stack on :3000 (HTTP 200), zero manual steps. M10 fixed three container-only bugs (glibc mismatch, `create_if_missing` default, stale-name/port conflicts); M11 confirmed CD now passes (it had been failing on the old `cargo install sqlx-cli`-on-rust-1.82 line, which M10 removed). See `docker-multistage` skill.
 
 Execution order is strict. Each milestone is verifiable before the next starts. Don't skip ahead; an unverified milestone rots.
 
@@ -180,11 +180,12 @@ M8 wrote the Dockerfile + compose but the full stack was never run in containers
 
 `.github/workflows/cd.yml` was written in M8 but never triggered.
 
-- [ ] Push a trivial change to `main` → confirm the CD run executes on the self-hosted runner
-- [ ] Confirm it rebuilds + restarts the stack (`docker compose up -d --build`)
-- [ ] Confirm zero manual steps end-to-end
-- **Verify:** a push to `main` results in a redeployed stack.
-- **Done when:** CD is **proven**, not just written.
+- [x] Push a trivial change to `main` → confirm the CD run executes on the self-hosted runner
+- [x] Confirm it rebuilds + restarts the stack (`docker compose up -d --build`)
+- [x] Confirm zero manual steps end-to-end
+- **Verify:** a push to `main` results in a redeployed stack. ✅ Verified 2026-06-22 — push `bb4d2a7..c54db94`: CD run `27920532615` completed/success on `jobhunting-runner`; both containers came up, `:3000` HTTP 200, app bootstrapped its own db on the fresh `JobHunting`-project volume.
+- **Done when:** CD is **proven**, not just written. ✅
+- **Note:** CD had been silently failing on the prior two pushes (`m9-experiences`, `PLANS`) because the *old* Dockerfile ran `cargo install sqlx-cli` on `rust:1.82` — and `sqlx-cli 0.9` requires rustc ≥1.94. M10 removed `sqlx-cli` entirely (switched to embedded `sqlx::migrate!()`), which is what unblocked CD. No M11-specific code change was needed; M11 was verify-only.
 
 ---
 
