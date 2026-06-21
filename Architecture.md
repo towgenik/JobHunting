@@ -358,10 +358,12 @@ pub struct JobRow {
 #[derive(Template)]
 #[template(path = "job.html")]
 pub struct JobTemplate {
-    pub id:          Uuid,
-    pub title:       String,
-    pub description: String,
-    pub cv:          CvContent,
+    pub id:            Uuid,
+    pub title:         String,
+    pub description:   String,
+    pub cv:            CvContent,
+    pub status:        String,        // for status banner and button visibility
+    pub reject_reason: String,        // shown when status == "rejected"
 }
 
 pub struct CvContent {
@@ -681,6 +683,16 @@ Submit returns `processing.html` immediately. The fragment polls `GET /jobs/:id/
   </section>
   <section>
     <h2>Generated CV</h2>
+
+    {% if status == "approved" %}
+    <p role="status" style="color:green"><strong>Approved</strong></p>
+    {% else if status == "rejected" %}
+    <p role="status" style="color:red"><strong>Rejected</strong></p>
+    {% if reject_reason != "" %}
+    <p><em>Reason:</em> {{ reject_reason }}</p>
+    {% endif %}
+    {% endif %}
+
     <p>{{ cv.summary }}</p>
     <ul>{% for s in cv.skills %}<li>{{ s }}</li>{% endfor %}</ul>
     {% for exp in cv.experiences %}
@@ -688,9 +700,10 @@ Submit returns `processing.html` immediately. The fragment polls `GET /jobs/:id/
       <ul>{% for bp in exp.bullet_points %}<li>{{ bp }}</li>{% endfor %}</ul>
     {% endfor %}
 
+    {% if status == "pending_approval" %}
     <div style="display:flex; gap:0.5rem; margin-top:1rem">
       <button hx-post="/jobs/{{ id }}/decision"
-              hx-vals='{"approved":true}'>Approve</button>
+              hx-vals='{"approved":"true"}'>Approve</button>
       <button class="secondary"
               onclick="document.getElementById('reject-box').style.display='block'">
         Reject
@@ -703,16 +716,22 @@ Submit returns `processing.html` immediately. The fragment polls `GET /jobs/:id/
                 placeholder="Reason for rejection…"
                 style="width:100%"></textarea>
       <button hx-post="/jobs/{{ id }}/decision"
-              hx-vals='{"approved":false}'
+              hx-vals='{"approved":"false"}'
               hx-include="#reason"
               style="margin-top:0.5rem">
         Confirm Reject
       </button>
     </div>
+    {% endif %}
   </section>
 </div>
 {% endblock %}
 ```
+
+Notes:
+- `hx-vals` passes `"true"` / `"false"` as strings; the `DecisionForm` deserializes `approved: Option<String>` and checks `== Some("true")`.
+- Status banner shows Approved (green) or Rejected (red + reason) on reload; decision buttons only appear for `pending_approval`.
+- `JobTemplate` includes `status: String` and `reject_reason: String` fields populated from `db::get_job`.
 
 ### 6.5. Settings Page (Master CV)
 

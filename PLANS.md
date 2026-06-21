@@ -4,7 +4,7 @@
 
 Phase 1: paste an `id.jobstreet.com` job URL → scrape → LLM-tailored CV → user approves/rejects. One site, end-to-end, no scaffolding for the other 42.
 
-**Status:** M4 ✅ complete — real LLM call implemented (Anthropic messages API). **Next: dispatch M5 (review + decision)**.
+**Status:** M5 ✅ complete — M6 next.
 
 Execution order is strict. Each milestone is verifiable before the next starts. Don't skip ahead; an unverified milestone rots.
 
@@ -119,8 +119,8 @@ Foundation so M2–M7 can cook and the result deploys anywhere. Direct edits in 
 - **Done when:** same flow as M3 produces a real tailored CV.
 
 ### M5 — Review + decision (`GET /jobs/:id`, `POST /jobs/:id/decision`)
-- [ ] Two-panel CV review page from §6.4
-- [ ] Approve → status `approved`. Reject → status `rejected`, reason stored in `reject_reason` (column added in M1, no new migration).
+- [x] Two-panel CV review page from §6.4
+- [x] Approve → status `approved`. Reject → status `rejected`, reason stored in `reject_reason` (column added in M1, no new migration).
 - **Verify:** approve and reject both work; reason persists across page reload.
 - **Done when:** decision flow is fully clickable and persists.
 

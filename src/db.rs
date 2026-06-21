@@ -111,10 +111,12 @@ pub async fn upsert_master_cv(pool: &SqlitePool, master_cv: &str) -> Result<()> 
 /// Get a full job row for the review page.
 pub async fn get_job(pool: &SqlitePool, job_id: Uuid) -> Result<JobRecord> {
     use sqlx::Row;
-    let row = sqlx::query("SELECT id, url, title, description, cv, status FROM jobs WHERE id = ?")
-        .bind(job_id.to_string())
-        .fetch_one(pool)
-        .await?;
+    let row = sqlx::query(
+        "SELECT id, url, title, description, cv, status, reject_reason FROM jobs WHERE id = ?",
+    )
+    .bind(job_id.to_string())
+    .fetch_one(pool)
+    .await?;
     Ok(JobRecord {
         id: job_id,
         url: row.try_get("url")?,
@@ -122,6 +124,9 @@ pub async fn get_job(pool: &SqlitePool, job_id: Uuid) -> Result<JobRecord> {
         description: row.try_get::<Option<String>, _>("description")?.unwrap_or_default(),
         cv: row.try_get::<Option<String>, _>("cv")?.unwrap_or_default(),
         status: row.try_get("status")?,
+        reject_reason: row
+            .try_get::<Option<String>, _>("reject_reason")?
+            .unwrap_or_default(),
     })
 }
 
@@ -166,12 +171,13 @@ pub async fn approve_job(pool: &SqlitePool, job_id: Uuid) -> Result<()> {
 }
 
 pub struct JobRecord {
-    pub id:          Uuid,
-    pub url:         String,
-    pub title:       String,
-    pub description: String,
-    pub cv:          String,
-    pub status:      String,
+    pub id:            Uuid,
+    pub url:           String,
+    pub title:         String,
+    pub description:   String,
+    pub cv:            String,
+    pub status:        String,
+    pub reject_reason: String,
 }
 
 pub struct JobListRow {

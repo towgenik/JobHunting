@@ -199,6 +199,8 @@ async fn job_detail(
         title: rec.title,
         description: rec.description,
         cv: CvContent { summary, skills, experiences },
+        status: rec.status,
+        reject_reason: rec.reject_reason,
     }
     .into_response()
 }

@@ -16,10 +16,12 @@ pub struct JobRow {
 #[derive(Template)]
 #[template(path = "job.html")]
 pub struct JobTemplate {
-    pub id:          Uuid,
-    pub title:       String,
-    pub description: String,
-    pub cv:          CvContent,
+    pub id:            Uuid,
+    pub title:         String,
+    pub description:   String,
+    pub cv:            CvContent,
+    pub status:        String,
+    pub reject_reason: String,
 }
 
 pub struct CvContent {

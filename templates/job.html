@@ -7,6 +7,16 @@
   </section>
   <section>
     <h2>Generated CV</h2>
+
+    {% if status == "approved" %}
+    <p role="status" style="color:green"><strong>Approved</strong></p>
+    {% else if status == "rejected" %}
+    <p role="status" style="color:red"><strong>Rejected</strong></p>
+    {% if reject_reason != "" %}
+    <p><em>Reason:</em> {{ reject_reason }}</p>
+    {% endif %}
+    {% endif %}
+
     <p>{{ cv.summary }}</p>
     <ul>{% for s in cv.skills %}<li>{{ s }}</li>{% endfor %}</ul>
     {% for exp in cv.experiences %}
@@ -14,6 +24,7 @@
       <ul>{% for bp in exp.bullet_points %}<li>{{ bp }}</li>{% endfor %}</ul>
     {% endfor %}
 
+    {% if status == "pending_approval" %}
     <div style="display:flex; gap:0.5rem; margin-top:1rem">
       <button hx-post="/jobs/{{ id }}/decision"
               hx-vals='{"approved":"true"}'>Approve</button>
@@ -35,6 +46,7 @@
         Confirm Reject
       </button>
     </div>
+    {% endif %}
   </section>
 </div>
 {% endblock %}
