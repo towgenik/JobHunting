@@ -4,7 +4,7 @@
 
 Phase 1: paste a `jobstreet.co.id` job URL → scrape → LLM-tailored CV → user approves/rejects. One site, end-to-end, no scaffolding for the other 42.
 
-**Status:** Prep complete — container scaffold, CI, self-improvement layer all committed + pushed. Self-hosted runner `jobhunting-runner` online, CI green (`7e5d23e`). Login bridge-networking smoke test still pending (user action). **Next: dispatch M2 (scrape spike)**.
+**Status:** Prep ✅ complete — container scaffold, CI, self-improvement layer committed + pushed. Runner online, CI green, login bridge-networking confirmed. **Next: dispatch M2 (scrape spike)**.
 
 Execution order is strict. Each milestone is verifiable before the next starts. Don't skip ahead; an unverified milestone rots.
 
@@ -80,10 +80,10 @@ Foundation so M2–M7 can cook and the result deploys anywhere. Direct edits in 
 - [x] `.github/workflows/ci.yml` — self-hosted runner; `cargo check` + `cargo test` + project self-checks (Architecture §9.3)
 - [x] `.opencode/skills/sync/SKILL.md` — doc-sync + self-improvement protocol; agents write skills on failures/surprises before every READY
 - [x] **Done:** committed + pushed — `login/`, `docker-compose.yml`, `.github/`, `.opencode/skills/sync/` all on `main` (`7e5d23e`)
-- [ ] **User:** smoke-test the login container on bridge networking — `docker compose up login`, open http://localhost:6901, confirm noVNC loads (can't run containers from here)
+- [x] **Done:** `docker compose up login` → noVNC :6901 returns `401` (auth prompt) ✓, CDP :9223 returns Chrome JSON ✓ — bridge networking works
 - [x] **Done:** self-hosted runner `jobhunting-runner` registered + running as systemd service; CI green ✓
-- **Verify:** CI green ✓ (`7e5d23e`). `docker compose up login` → noVNC :6901 — **pending** user smoke-test.
-- **Done when:** CI green ✓ + login bridge-networking confirmed. App containerization is M8.
+- **Verify:** CI green ✓ (`7e5d23e`). `docker compose up login` → noVNC :6901 `401` ✓, CDP :9223 Chrome JSON ✓.
+- **Done when:** ✅ **Prep complete.** App containerization is M8.
 
 ---
 
