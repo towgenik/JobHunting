@@ -1,5 +1,16 @@
 {% extends "base.html" %}
 {% block content %}
+<!-- Batch import: paste a listing/search URL to discover many jobs at once. -->
+<form hx-post="/jobs/search" hx-target="#job-list" hx-swap="afterbegin"
+      style="margin-bottom:1rem; padding-bottom:0.75rem; border-bottom:1px solid var(--pico-muted-border-color, #ccc)">
+  <input name="url" type="url"
+         placeholder="Paste a JobStreet listing/search URL (batch import)…"
+         pattern="https://id\.jobstreet\.com/.*"
+         title="Batch import from id.jobstreet.com listing pages"
+         required>
+  <button type="submit">Search &amp; Import</button>
+</form>
+
 <form hx-post="/jobs" hx-target="#job-list" hx-swap="afterbegin">
   <input name="url" type="url"
          placeholder="Paste an id.jobstreet.com job URL…"

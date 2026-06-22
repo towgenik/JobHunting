@@ -51,6 +51,15 @@ pub struct CvReadyTemplate {
 }
 
 #[derive(Template)]
+#[template(path = "fragments/search_card.html")]
+pub struct SearchCardTemplate {
+    pub search_id: Uuid,
+    pub url:       String,
+    pub terminal:  i64,
+    pub total:     i64,
+}
+
+#[derive(Template)]
 #[template(path = "settings.html")]
 pub struct SettingsTemplate {
     pub master_cv: String,

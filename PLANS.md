@@ -193,7 +193,7 @@ M8 wrote the Dockerfile + compose but the full stack was never run in containers
 
 - **Other 42 sites** → Phase 2, one at a time, ordered by xlsx category
 - **Per-site selector config map** → Phase 2, when the second site is attempted; Scrapling's `adaptive=True`/`auto_save` (self-healing selectors) may reduce or replace it
-- **Listing/index crawler** → Phase 3, only if per-URL proves insufficient; Scrapling's `Spider` framework (concurrency, pause/resume, multi-session) is the vehicle
+- **Listing/index crawler** → ✅ **Phase 3 done (2026-06-22).** `POST /jobs/search` with a listing URL → `crawl_listing.py` paginates through search results → discovers detail URLs → creates job stubs linked to a search → processes each sequentially through the existing `generate::process_job`. Selectors: `article[data-card-type="JobCard"]` → `a[href*="origin=cardTitle"]` → `/id/job/<id>`. Pagination via `a[aria-label="Selanjutnya"]` → `?page=N`. Max pages: 3 (override with `CRAWL_MAX_PAGES`). Search progress card polls every 3s until all jobs terminal.
 - **Separate scrape container** → alternative to M8's fat app image; base the scraper on `pyd4vinci/scrapling` if the app image gets too heavy. M8 bakes the scraper into the app image by default
 - **Per-function test suites / framework** → only if M7's self-checks prove insufficient
 - **Auth, multi-user** → never; single-user. **Deployment** → M8: containerized, `docker compose up` on any Linux VM/LXC; CI on self-hosted GitHub Actions (Prep)

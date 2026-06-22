@@ -9,10 +9,28 @@ pub async fn create_job_stub(pool: &SqlitePool, url: &str) -> Result<Uuid> {
     let id = Uuid::new_v4();
     let id_str = id.to_string();
     sqlx::query(
-        "INSERT INTO jobs (id, url, status) VALUES (?, ?, 'new')"
+        "INSERT INTO jobs (id, url, status, search_id) VALUES (?, ?, 'new', NULL)"
     )
     .bind(&id_str)
     .bind(url)
+    .execute(pool)
+    .await?;
+    Ok(id)
+}
+
+/// Create a stub job record with a search_id link.
+pub async fn create_job_stub_for_search(
+    pool: &SqlitePool,
+    url: &str,
+    search_id: Uuid,
+) -> Result<Uuid> {
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO jobs (id, url, status, search_id) VALUES (?, ?, 'new', ?)"
+    )
+    .bind(&id.to_string())
+    .bind(url)
+    .bind(&search_id.to_string())
     .execute(pool)
     .await?;
     Ok(id)
@@ -186,6 +204,67 @@ pub async fn get_job_id_by_url(pool: &SqlitePool, url: &str) -> Result<Option<Uu
             Ok(Some(id))
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Search (batch crawl) helpers
+// ---------------------------------------------------------------------------
+
+pub async fn create_search(pool: &SqlitePool, id: Uuid, url: &str, found_count: i64) -> Result<()> {
+    sqlx::query("INSERT INTO searches (id, url, found_count) VALUES (?, ?, ?)")
+        .bind(&id.to_string())
+        .bind(url)
+        .bind(found_count)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub struct SearchRow {
+    pub id: Uuid,
+    pub url: String,
+    pub found_count: i64,
+}
+
+pub async fn get_search(pool: &SqlitePool, search_id: Uuid) -> Result<SearchRow> {
+    use sqlx::Row;
+    let row = sqlx::query("SELECT id, url, found_count FROM searches WHERE id = ?")
+        .bind(&search_id.to_string())
+        .fetch_one(pool)
+        .await?;
+    let id_str: String = row.try_get("id")?;
+    Ok(SearchRow {
+        id: Uuid::parse_str(&id_str).map_err(|e| anyhow::anyhow!(e))?,
+        url: row.try_get("url")?,
+        found_count: row.try_get("found_count")?,
+    })
+}
+
+/// Count jobs linked to a search in terminal vs. non-terminal states.
+/// Returns (terminal_count, total_count).
+pub async fn get_search_progress(pool: &SqlitePool, search_id: Uuid) -> Result<(i64, i64)> {
+    use sqlx::Row;
+    let row = sqlx::query(
+        "SELECT
+            COUNT(*) AS total,
+            SUM(CASE WHEN status IN ('pending_approval','approved','rejected','failed')
+                     THEN 1 ELSE 0 END) AS terminal
+         FROM jobs WHERE search_id = ?"
+    )
+    .bind(&search_id.to_string())
+    .fetch_one(pool)
+    .await?;
+    Ok((row.try_get("terminal")?, row.try_get("total")?))
+}
+
+/// Link an existing job to a search (used when a discovered URL already existed in the DB).
+pub async fn link_job_to_search(pool: &SqlitePool, job_id: Uuid, search_id: Uuid) -> Result<()> {
+    sqlx::query("UPDATE jobs SET search_id = ? WHERE id = ? AND search_id IS NULL")
+        .bind(&search_id.to_string())
+        .bind(&job_id.to_string())
+        .execute(pool)
+        .await?;
+    Ok(())
 }
 
 pub struct JobRecord {

@@ -110,8 +110,8 @@ WORKDIR /app
 # be copied to the runtime image.
 COPY --from=builder /build/target/release/job-agent /app/job-agent
 
-# Copy Python scripts the binary shells out to at runtime (scrape.py).
-COPY scrape.py session.py ./
+# Copy Python scripts the binary shells out to at runtime (scrape.py, crawl_listing.py).
+COPY scrape.py session.py crawl_listing.py ./
 
 # Expose the web UI port.
 EXPOSE 3000

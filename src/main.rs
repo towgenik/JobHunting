@@ -1,3 +1,4 @@
+mod crawler;
 mod db;
 mod generate;
 mod templates;
@@ -14,7 +15,7 @@ use uuid::Uuid;
 
 use templates::{
     CvContent, Experience, IndexTemplate, JobRow, JobTemplate,
-    ProcessingTemplate, SettingsTemplate,
+    ProcessingTemplate, SearchCardTemplate, SettingsTemplate,
 };
 
 // ---------------------------------------------------------------------------
@@ -78,7 +79,7 @@ struct SettingsForm {
 // ---------------------------------------------------------------------------
 
 // ponytail: hardcoded host allowlist; replace with config-driven list in Phase 2
-fn is_phase1_url(url: &str) -> bool {
+fn is_jobstreet_url(url: &str) -> bool {
     reqwest::Url::parse(url)
         .ok()
         .and_then(|u| u.host_str().map(|h| h == "id.jobstreet.com"))
@@ -103,9 +104,9 @@ async fn submit_job(
     State(app): State<AppState>,
     Form(body): Form<JobForm>,
 ) -> Response {
-    if !is_phase1_url(&body.url) {
+    if !is_jobstreet_url(&body.url) {
         return Html(
-            "<article><span class=\"error\">Phase 1 supports id.jobstreet.com URLs only.</span></article>"
+            "<article><span class=\"error\">Only id.jobstreet.com URLs are supported.</span></article>"
                 .to_string(),
         )
         .into_response();
@@ -144,6 +145,49 @@ async fn submit_job(
     });
 
     ProcessingTemplate { id: job_id, url: body.url }.into_response()
+}
+
+// POST /jobs/search — accept a listing URL, crawl for detail URLs, process each.
+async fn submit_search(
+    State(app): State<AppState>,
+    Form(body): Form<JobForm>,
+) -> Response {
+    if !is_jobstreet_url(&body.url) {
+        return Html(
+            "<article><span class=\"error\">Only id.jobstreet.com URLs are supported.</span></article>"
+                .to_string(),
+        )
+        .into_response();
+    }
+
+    let search_id = Uuid::new_v4();
+    tokio::spawn({
+        let app = app.clone();
+        let url = body.url.clone();
+        async move {
+            crawler::run_search(app, search_id, url).await;
+        }
+    });
+
+    // Return a polling card immediately.
+    SearchCardTemplate { search_id, url: body.url, terminal: 0, total: 0 }.into_response()
+}
+
+// GET /searches/:id/card — HTMX polls every 3s until all jobs reach terminal status.
+async fn search_card(
+    State(app): State<AppState>,
+    Path(search_id): Path<Uuid>,
+) -> Response {
+    let (terminal, total) = db::get_search_progress(&app.db, search_id)
+        .await
+        .unwrap_or((0, 0));
+
+    let url = db::get_search(&app.db, search_id)
+        .await
+        .map(|s| s.url)
+        .unwrap_or_default();
+
+    SearchCardTemplate { search_id, url, terminal, total }.into_response()
 }
 
 // GET /jobs/:id/card — HTMX polls every 2s; terminal status cards drop hx-trigger.
@@ -293,9 +337,11 @@ async fn main() {
     let app = Router::new()
         .route("/",                  get(index))
         .route("/jobs",              post(submit_job))
+        .route("/jobs/search",       post(submit_search))
         .route("/jobs/:id",          get(job_detail))
         .route("/jobs/:id/card",     get(job_card))
         .route("/jobs/:id/decision", post(job_decision))
+        .route("/searches/:id/card", get(search_card))
         .route("/settings",          get(settings_page).post(save_settings))
         .with_state(state);
 
