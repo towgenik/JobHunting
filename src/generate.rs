@@ -174,10 +174,28 @@ async fn call_llm(app: &AppState, prompt: &str) -> Result<Value> {
             .ok_or_else(|| anyhow::anyhow!("LLM response missing content[0].text: {resp}"))?
     };
 
-    let cv: Value = serde_json::from_str(text)
+    // ponytail: local/reasoning models (llama.cpp, etc.) often wrap JSON in a
+    // ```json … ``` fence despite "no markdown" instructions. Strip one fence so
+    // parsing is robust across providers; anything weirder still errors below.
+    let cv: Value = serde_json::from_str(strip_code_fence(text))
         .map_err(|e| anyhow::anyhow!("LLM returned non-JSON text: {e}\nraw: {text}"))?;
 
     Ok(cv)
+}
+
+/// Strip a single ```lang … ``` markdown fence if `text` is wrapped in one, so
+/// JSON emitted by models that ignore "no markdown" still parses. Returns the
+/// (possibly unchanged) inner text. Bare/non-fenced text passes through intact.
+fn strip_code_fence(text: &str) -> &str {
+    let text = text.trim();
+    match text.strip_prefix("```") {
+        // Drop a language tag (json/python/…) if present, then the closing fence.
+        Some(rest) => rest
+            .trim_start_matches(|c: char| c.is_alphanumeric())
+            .trim_end_matches("```")
+            .trim(),
+        None => text,
+    }
 }
 
 #[cfg(test)]
@@ -227,5 +245,25 @@ mod tests {
         assert!(result["summary"].is_string(),   "mock missing 'summary'");
         assert!(result["skills"].is_array(),     "mock missing 'skills'");
         assert!(result["experiences"].is_array(),"mock missing 'experiences'");
+    }
+
+    /// Self-check: `strip_code_fence` recovers valid JSON from the fenced output
+    /// local/reasoning models (llama.cpp) actually emit — ```json … ```. Covers
+    /// the ```json tag, a bare ```, and unfenced JSON passing through unchanged.
+    #[test]
+    fn strip_code_fence_recovers_json() {
+        let cases = [
+            ("```json\n{\"summary\":\"x\",\"skills\":[\"Rust\"],\"experiences\":[]}\n```"),
+            ("```\n{\"a\":1}\n```"),
+            ("{\"a\":1}"),
+            ("  ```json\n{\"b\":2}\n```  "),
+        ];
+        for raw in cases {
+            let cleaned = strip_code_fence(raw);
+            assert!(serde_json::from_str::<Value>(cleaned).is_ok(),
+                    "failed to recover JSON from: {raw} (got: {cleaned})");
+        }
+        // Unfenced non-JSON is left intact (the caller's parse surfaces the error).
+        assert_eq!(strip_code_fence("not json at all"), "not json at all");
     }
 }

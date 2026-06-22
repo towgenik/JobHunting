@@ -16,6 +16,9 @@ jobs:
       - name: Rebuild and restart stack
         # Pull any pre-built images from a registry (no-op if not using one),
         # then rebuild from source and restart changed services in the background.
+        # --env-file ../.env points at the project-root .env (outside the checkout
+        # directory) so it survives `actions/checkout` cleaning and can be shared
+        # across worktrees. The dev-machine setup mirrors this: Makefile sources ../.env.
         run: |
-          docker compose pull --ignore-pull-failures || true
-          docker compose up -d --build
+          docker compose --env-file ../.env pull --ignore-pull-failures || true
+          docker compose --env-file ../.env up -d --build
