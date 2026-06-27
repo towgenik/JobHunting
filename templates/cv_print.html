@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ name }} — CV</title>
+<style>
+    @page { size:A4; margin:1.5cm }
+    * { margin:0; padding:0; box-sizing:border-box }
+    body {
+        font-family:'Georgia','Times New Roman',serif;
+        font-size:11pt; line-height:1.45; color:#222;
+        max-width:794px; margin:0 auto; padding:1.5cm;
+    }
+    header {
+        text-align:center; margin-bottom:1.5em;
+        padding-bottom:1em; border-bottom:1.5px solid #333;
+    }
+    header .name {
+        font-size:18pt; font-weight:700;
+        letter-spacing:2pt; text-transform:uppercase;
+        margin-bottom:.15em;
+    }
+    header .title {
+        font-size:11pt; color:#555; font-style:italic;
+    }
+    .section-title {
+        font-size:14pt; font-weight:700; text-transform:uppercase;
+        letter-spacing:1pt; margin:1.2em 0 .4em;
+        border-bottom:1px solid #999; padding-bottom:.15em;
+    }
+    p { margin:0 0 .5em; text-align:justify }
+    ul { margin:0 0 .6em 1.2em; list-style:square }
+    li { margin-bottom:.15em }
+    .experience h3 {
+        font-size:11pt; margin:.8em 0 .2em; font-weight:600;
+    }
+    .experience .meta {
+        font-size:10.5pt; color:#555; font-style:italic;
+        margin-bottom:.3em;
+    }
+    .no-print { display:block; text-align:center; margin-bottom:1cm }
+    .no-print button {
+        padding:.5em 2em; font-size:11pt; cursor:pointer;
+    }
+    @media print {
+        .no-print { display:none !important }
+    }
+</style>
+</head>
+<body>
+<div class="no-print">
+    <button onclick="window.print()">Print / Save as PDF</button>
+    <p style="font-size:9pt;color:#999;margin-top:.3em">Use Ctrl+P (Cmd+P on Mac) or click the button above.</p>
+</div>
+
+<header>
+    <div class="name">{{ name }}</div>
+    {% if title != "" %}<div class="title">{{ title }}</div>{% endif %}
+</header>
+
+{% if summary != "" %}
+<section>
+    <div class="section-title">Summary</div>
+    <p>{{ summary }}</p>
+</section>
+{% endif %}
+
+{% if skills.len() > 0 %}
+<section>
+    <div class="section-title">Skills</div>
+    <ul>{% for s in skills %}<li>{{ s }}</li>{% endfor %}</ul>
+</section>
+{% endif %}
+
+{% if experiences.len() > 0 %}
+<section>
+    <div class="section-title">Experience</div>
+    {% for exp in experiences %}
+    <div class="experience">
+        <h3>{{ exp.role }}</h3>
+        <div class="meta">{{ exp.company }}</div>
+        <ul>{% for bp in exp.bullet_points %}<li>{{ bp }}</li>{% endfor %}</ul>
+    </div>
+    {% endfor %}
+</section>
+{% endif %}
+</body>
+</html>
