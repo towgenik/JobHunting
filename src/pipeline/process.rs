@@ -21,6 +21,7 @@ pub async fn process_job(app: &AppState, job_id: Uuid) -> Result<()> {
     let agent = db::get_agent_settings(&app.db).await.unwrap_or_default();
     let max_output = agent.max_output.max(256) as u32;
     let thinking_effort = agent.thinking_effort.clone();
+    let ctx_window = agent.ctx_window.max(1000) as u32;
 
     let url      = db::get_job_url(&app.db, job_id).await?;
     let job_data = fetch_job(app, &url).await?;
@@ -74,7 +75,7 @@ pub async fn process_job(app: &AppState, job_id: Uuid) -> Result<()> {
     // 1. Initial draft — use wiki graph for focused context instead of raw blob dump
     eprintln!("job {job_id}: writer →");
     let t0 = std::time::Instant::now();
-    let wiki_context = build_wiki_context(app, &jd, &master_cv);
+    let wiki_context = build_wiki_context(app, &jd, &master_cv, ctx_window);
     let mut cv = writer_call(app, &wiki_context, &jd, None, max_output, Some(&thinking_effort)).await?;
     eprintln!("job {job_id}: writer ✓ ({:.1}s)", t0.elapsed().as_secs_f64());
     let mut writer_constraints = cv.get("constraints").and_then(|v| v.as_str()).filter(|s| !s.is_empty()).map(|s| s.to_string());
@@ -204,12 +205,13 @@ pub async fn regenerate_cv(app: &AppState, job_id: Uuid, feedback: &str) -> Resu
     let agent = db::get_agent_settings(&app.db).await.unwrap_or_default();
     let max_output = agent.max_output.max(256) as u32;
     let thinking_effort = agent.thinking_effort.clone();
+    let ctx_window = agent.ctx_window.max(1000) as u32;
 
     let master_cv = db::get_master_cv(&app.db).await?;
     let rec = db::get_job(&app.db, job_id).await?;
     let jd = rec.description;
 
-    let wiki_context = build_wiki_context(app, &jd, &master_cv);
+    let wiki_context = build_wiki_context(app, &jd, &master_cv, ctx_window);
     let mut cv = writer_call(app, &wiki_context, &jd, Some(&json!({
         "score": 0,
         "feedback": feedback,

@@ -41,4 +41,10 @@ pub struct ProfileForm {
     pub file: String,
 }
 
+#[derive(Deserialize)]
+pub struct PipelineForm {
+    pub llm_concurrency:     i64,
+    pub max_jobs_per_crawl:  i64,
+}
+
 // ponytail: DeleteBatchForm removed — serde_urlencoded can't parse repeated

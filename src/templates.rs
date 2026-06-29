@@ -159,6 +159,9 @@ pub struct SettingsTemplate {
     pub agent_thinking_effort:     String,
     pub agent_wiki_query_max_hops: i64,
     pub wiki_auto_ingest:          bool,
+    // Pipeline tuning
+    pub llm_concurrency:           i64,
+    pub max_jobs_per_crawl:        i64,
 }
 
 #[derive(Template)]

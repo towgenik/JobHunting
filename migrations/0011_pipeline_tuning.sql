@@ -1,0 +1,2 @@
+ALTER TABLE settings ADD COLUMN llm_concurrency INTEGER NOT NULL DEFAULT 2;
+ALTER TABLE settings ADD COLUMN max_jobs_per_crawl INTEGER NOT NULL DEFAULT 30;

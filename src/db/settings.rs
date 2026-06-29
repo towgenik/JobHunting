@@ -107,6 +107,45 @@ pub async fn save_agent_settings(pool: &SqlitePool, s: &AgentSettings) -> Result
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// Pipeline tuning (concurrency, per-crawl caps)
+// ---------------------------------------------------------------------------
+
+pub struct PipelineConfig {
+    pub llm_concurrency:     i64,
+    pub max_jobs_per_crawl:  i64,
+}
+
+impl Default for PipelineConfig {
+    fn default() -> Self {
+        Self { llm_concurrency: 2, max_jobs_per_crawl: 30 }
+    }
+}
+
+pub async fn get_pipeline_config(pool: &SqlitePool) -> Result<PipelineConfig> {
+    use sqlx::Row;
+    let row = sqlx::query(
+        "SELECT llm_concurrency, max_jobs_per_crawl FROM settings WHERE id = 1"
+    )
+    .fetch_one(pool)
+    .await?;
+    Ok(PipelineConfig {
+        llm_concurrency:    row.try_get::<i64, _>("llm_concurrency").unwrap_or(2),
+        max_jobs_per_crawl: row.try_get::<i64, _>("max_jobs_per_crawl").unwrap_or(30),
+    })
+}
+
+pub async fn save_pipeline_config(pool: &SqlitePool, c: &PipelineConfig) -> Result<()> {
+    sqlx::query(
+        "UPDATE settings SET llm_concurrency = ?, max_jobs_per_crawl = ? WHERE id = 1"
+    )
+    .bind(c.llm_concurrency)
+    .bind(c.max_jobs_per_crawl)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 pub async fn get_wiki_last_ingest_at(pool: &SqlitePool) -> Result<Option<i64>> {
     use sqlx::Row;
     let row = sqlx::query("SELECT wiki_last_ingest_at FROM settings WHERE id = 1")

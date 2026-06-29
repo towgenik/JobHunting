@@ -144,9 +144,8 @@ async fn load_llm_config_with_env_fallback(pool: &SqlitePool) -> LlmConfig {
 }
 
 impl AppState {
-    pub fn new(db: SqlitePool, llm_config: LlmConfig) -> Self {
-        let concurrency: usize = std::env::var("LLM_CONCURRENCY")
-            .ok().and_then(|s| s.parse().ok()).unwrap_or(2);
+    pub fn new(db: SqlitePool, llm_config: LlmConfig, concurrency: usize) -> Self {
+        let concurrency = concurrency.max(1);
         let (profile_title_blacklist, profile_deal_breaker_keywords) =
             parse_profile_frontmatter();
 
@@ -216,7 +215,13 @@ async fn main() {
     }
 
     let llm_config = load_llm_config_with_env_fallback(&pool).await;
-    let state = AppState::new(pool, llm_config);
+    // Pipeline tuning from DB (env LLM_CONCURRENCY is fallback only)
+    let pipeline_cfg = db::get_pipeline_config(&pool).await.unwrap_or_default();
+    let concurrency = std::env::var("LLM_CONCURRENCY")
+        .ok().and_then(|s| s.parse().ok())
+        .unwrap_or(pipeline_cfg.llm_concurrency as usize);
+    eprintln!("concurrency={concurrency}, max_jobs_per_crawl={}", pipeline_cfg.max_jobs_per_crawl);
+    let state = AppState::new(pool, llm_config, concurrency);
 
     // Sync profile from files → DB on startup
     if let Err(e) = profile::sync_profile_to_db(&state.db).await {
@@ -320,6 +325,7 @@ async fn main() {
         .route("/settings/llm",      post(handlers::settings::settings_llm_save))
         .route("/settings/scheduler", post(handlers::settings::settings_scheduler_save))
         .route("/settings/agent",     post(handlers::settings::settings_agent_save))
+        .route("/settings/pipeline",  post(handlers::settings::settings_pipeline_save))
         .route("/scheduler/run",     post(handlers::settings::scheduler_run))
         .merge(api::api_router(state_with_wiki.clone()))
         .with_state(state_with_wiki);

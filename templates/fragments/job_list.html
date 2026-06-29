@@ -21,7 +21,7 @@
 </div>
 
 {% for job in jobs %}
-<div style="display:flex; justify-content:space-between; align-items:center; padding:.35rem .5rem">
+<div id="job-{{ job.id }}" class="job-row" style="display:flex; justify-content:space-between; align-items:center; padding:.35rem .5rem">
   <span style="display:flex; align-items:center; gap:.4rem; flex:1; overflow:hidden">
     <input type="checkbox" name="ids" value="{{ job.id }}" class="job-select" style="margin:0; width:auto; flex-shrink:0">
     <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0">

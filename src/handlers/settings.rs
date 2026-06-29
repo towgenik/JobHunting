@@ -20,6 +20,7 @@ pub async fn settings_page(State(app): State<AppState>) -> impl IntoResponse {
     });
     let runs = db::list_scheduler_runs(&app.db, 10).await.unwrap_or_default();
     let agent = db::get_agent_settings(&app.db).await.unwrap_or_default();
+    let pipeline = db::get_pipeline_config(&app.db).await.unwrap_or_default();
     SettingsTemplate {
         llm_endpoint: endpoint,
         llm_api_key: api_key,
@@ -36,6 +37,8 @@ pub async fn settings_page(State(app): State<AppState>) -> impl IntoResponse {
         agent_thinking_effort: agent.thinking_effort,
         agent_wiki_query_max_hops: agent.wiki_query_max_hops,
         wiki_auto_ingest: agent.wiki_auto_ingest,
+        llm_concurrency:    pipeline.llm_concurrency,
+        max_jobs_per_crawl: pipeline.max_jobs_per_crawl,
     }
 }
 
@@ -98,6 +101,22 @@ pub async fn settings_agent_save(
             e.to_string().replace('&', "&amp;").replace('<', "&lt;"))).into_response();
     }
     Html("<span style=\"color:var(--status-ok)\">Agent settings saved.</span>").into_response()
+}
+
+// POST /settings/pipeline — save pipeline tuning config to DB
+pub async fn settings_pipeline_save(
+    State(app): State<AppState>,
+    Form(body): Form<PipelineForm>,
+) -> Response {
+    let config = db::PipelineConfig {
+        llm_concurrency:    body.llm_concurrency.clamp(1, 64),
+        max_jobs_per_crawl: body.max_jobs_per_crawl.clamp(5, 500),
+    };
+    if let Err(e) = db::save_pipeline_config(&app.db, &config).await {
+        return Html(format!("<span style=\"color:var(--status-err)\">Save failed: {}</span>",
+            e.to_string().replace('&', "&amp;").replace('<', "&lt;"))).into_response();
+    }
+    Html("<span style=\"color:var(--status-ok)\">Pipeline config saved. Restart to apply concurrency change.</span>").into_response()
 }
 
 // ---------------------------------------------------------------------------

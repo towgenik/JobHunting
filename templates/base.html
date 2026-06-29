@@ -85,39 +85,31 @@
     {% block content %}{% endblock %}
   </main>
   <script>
-    // SSE client — replaces 2s polling for live status updates.
+    // SSE client — debounced list refresh. No polling, no reload.
     (function() {
       const source = new EventSource('/events');
-      const pending = {};
-      source.onmessage = function(e) {
-        try {
-          const msg = JSON.parse(e.data);
-          const el = document.getElementById('job-' + msg.id);
-          if (el) {
-            fetch('/jobs/' + msg.id + '/card')
-              .then(r => r.text())
-              .then(html => { el.outerHTML = html; });
-          } else {
-            // Element not in DOM yet (HTMX response pending) — retry when it appears.
-            pending[msg.id] = msg;
-          }
-        } catch(err) {}
+      let timer = null;
+      const refreshList = () => {
+        if (timer) return;
+        timer = setTimeout(() => {
+          timer = null;
+          const list = document.getElementById('job-list');
+          if (!list) return;
+          const checkedIds = Array.from(list.querySelectorAll('.job-select:checked'))
+            .map(cb => cb.value);
+          fetch('/jobs/list')
+            .then(r => r.text())
+            .then(html => {
+              list.innerHTML = html;
+              checkedIds.forEach(id => {
+                const cb = list.querySelector('.job-select[value="' + id + '"]');
+                if (cb) cb.checked = true;
+              });
+            });
+        }, 150);
       };
-      // Flush pending updates after HTMX settles (e.g. after form submit).
-      document.body.addEventListener('htmx:afterSwap', function() {
-        for (const id in pending) {
-          const el = document.getElementById('job-' + id);
-          if (el) {
-            fetch('/jobs/' + id + '/card')
-              .then(r => r.text())
-              .then(html => { el.outerHTML = html; });
-            delete pending[id];
-          }
-        }
-      });
-      source.onerror = function() {
-        // Browser auto-reconnects on error — no action needed.
-      };
+      source.addEventListener('job-update', refreshList);
+      source.onerror = function() {};
     })();
   </script>
 </body>

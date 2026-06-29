@@ -1,5 +1,10 @@
 {% extends "base.html" %}
 {% block content %}
+<div hx-ext="sse" sse-connect="/events"
+     hx-get="/jobs/{{ id }}" hx-trigger="sse:job-update"
+     hx-target="#job-detail" hx-swap="innerHTML"
+     style="display:contents">
+<div id="job-detail">
 <style>
   main.container { max-width:100%; padding:0; margin:0; display:flex; flex-direction:column; height:100vh }
   nav { padding:.4rem 1rem; flex-shrink:0; border-bottom:1px solid var(--border-subtle) }
@@ -137,19 +142,6 @@
             style="flex:1; border:none; border-radius:6px; box-shadow:0 0 0 1px var(--border-subtle); background:#fff"></iframe>
   </section>
 </div>
-
-<script>
-// Reload page when this job's status changes via SSE (fixes frozen conditional sections).
-(function() {
-  var source = new EventSource('/events');
-  source.onmessage = function(e) {
-    try {
-      var msg = JSON.parse(e.data);
-      if (msg.id === '{{ id }}' && msg.status !== '{{ status }}') {
-        location.reload();
-      }
-    } catch(err) {}
-  };
-})();
-</script>
+</div>
+</div>
 {% endblock %}

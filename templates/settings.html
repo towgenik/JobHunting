@@ -71,6 +71,28 @@
 </section>
 
 <section>
+  <h3>Pipeline Tuning</h3>
+  <form hx-post="/settings/pipeline" hx-target="#settings-status" hx-swap="innerHTML">
+    <div class="form-row">
+      <label>LLM concurrency</label>
+      <input name="llm_concurrency" type="number" value="{{ llm_concurrency }}" min="1" max="64" style="max-width:80px">
+      <span style="font-size:.82rem; color:var(--text-secondary)">parallel LLM calls (1 = serialized, ideal for free endpoints)</span>
+    </div>
+    <div class="form-row">
+      <label>Max jobs/crawl</label>
+      <input name="max_jobs_per_crawl" type="number" value="{{ max_jobs_per_crawl }}" min="5" max="500" style="max-width:80px">
+      <span style="font-size:.82rem; color:var(--text-secondary)">per-crawl cap (prevents 200-job dumps)</span>
+    </div>
+    <p style="font-size:.78rem; color:var(--text-secondary); margin-top:.3rem">
+      Concurrency changes apply on next restart.
+    </p>
+    <div class="btn-row">
+      <button type="submit">Save</button>
+    </div>
+  </form>
+</section>
+
+<section>
   <h3>Agent Settings</h3>
   <form hx-post="/settings/agent" hx-target="#settings-status" hx-swap="innerHTML">
     <div class="form-row">

@@ -24,7 +24,7 @@ pub async fn sse_events(
 ) -> Sse<impl tokio_stream::Stream<Item = Result<Event, std::convert::Infallible>>> {
     let rx = app.event_bus.subscribe();
     let stream = BroadcastStream::new(rx).filter_map(|r| match r {
-        Ok(msg) => Some(Ok(Event::default().data(msg))),
+        Ok(msg) => Some(Ok(Event::default().event("job-update").data(msg))),
         Err(_) => None,
     });
     Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::default())

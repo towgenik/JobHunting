@@ -1,7 +1,7 @@
 use anyhow::Result;
 use serde_json::Value;
 use uuid::Uuid;
-use crate::{db, finish_crawl_activity, generate, set_crawl_activity, AppState};
+use crate::{db, events, finish_crawl_activity, generate, set_crawl_activity, AppState};
 
 /// Shared per-URL processing loop. Dedup check → create stub → process job.
 /// Jobs are spawned concurrently — the LLM semaphore limits actual parallelism.
@@ -35,7 +35,10 @@ async fn process_discovered_urls(app: &AppState, search_id: Uuid, urls: Vec<Stri
         }
 
         let job_id = match db::create_job_stub_for_search(&app.db, &normalized_url, search_id).await {
-            Ok(id) => id,
+            Ok(id) => {
+                events::publish_job_update(app, id, "new", "Queued for screening");
+                id
+            }
             Err(e) => {
                 eprintln!("search {search_id}: create_job_stub failed for {url}: {e}");
                 continue;
@@ -166,6 +169,14 @@ pub async fn scheduler_browse(app: AppState, date_range: u32, max_pages: u32) ->
     if urls_to_process.is_empty() {
         finish_crawl_activity(&app);
         return Ok(());
+    }
+
+    // Cap per-crawl job count from pipeline settings
+    let pipeline = db::get_pipeline_config(&app.db).await.unwrap_or_default();
+    let cap = pipeline.max_jobs_per_crawl.clamp(5, 500) as usize;
+    if urls_to_process.len() > cap {
+        eprintln!("scheduler_browse: capping from {} to {cap} (max_jobs_per_crawl)", urls_to_process.len());
+        urls_to_process.truncate(cap);
     }
 
     let search_id = sid;
