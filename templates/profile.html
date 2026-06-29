@@ -251,12 +251,16 @@
     setTimeout(showPageCount, 100);
   });
 
+  // ponytail: saving flag — suppresses self-triggered SSE events from our own save
+  let saving = false;
+
   function saveProfile() {
     const ed = document.getElementById('editor');
     const fileField = document.getElementById('file-field');
     const formData = new URLSearchParams();
     formData.append('content', ed.value);
     formData.append('file', fileField.value);
+    saving = true;
     fetch('/profile', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:formData })
       .then(r => r.text())
       .then(t => {
@@ -267,7 +271,8 @@
           // Broadcast to other tabs
           profileChannel.postMessage({file: fileField.value, value: ed.value});
         }
-      });
+      })
+      .finally(() => { saving = false; });
   }
 
   // ─── Live sync: lastSavedValue, BroadcastChannel, SSE, toast ─────────
@@ -313,6 +318,7 @@
   (function() {
     const src = new EventSource('/events');
     src.addEventListener('profile-changed', function(ev) {
+      if (saving) return; // ignore our own save triggering the watcher
       let d;
       try { d = JSON.parse(ev.data); } catch { return; }
       const fileField = document.getElementById('file-field');
