@@ -45,13 +45,27 @@ pub fn publish_scheduler_run_finished(app: &AppState, run_id: i64, status: &str)
     }));
 }
 
-/// GET /events — SSE stream of all events. Frontend dispatches by "kind".
+/// Publish profile file changed on disk.
+pub fn publish_profile_changed(app: &AppState, path: &str) {
+    publish(app, "profile-changed", serde_json::json!({
+        "path": path,
+    }));
+}
+
+/// GET /events — SSE stream of all events. Frontend dispatches by event name.
 pub async fn sse_events(
     State(app): State<AppState>,
 ) -> Sse<impl tokio_stream::Stream<Item = Result<Event, std::convert::Infallible>>> {
     let rx = app.event_bus.subscribe();
     let stream = BroadcastStream::new(rx).filter_map(|r| match r {
-        Ok(msg) => Some(Ok(Event::default().event("job-update").data(msg))),
+        Ok(msg) => {
+            // Extract kind from JSON envelope and use it as the SSE event name
+            let kind = serde_json::from_str::<serde_json::Value>(&msg)
+                .ok()
+                .and_then(|v| v["kind"].as_str().map(String::from))
+                .unwrap_or_else(|| "job-update".into());
+            Some(Ok(Event::default().event(kind).data(msg)))
+        }
         Err(_) => None,
     });
     Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::default())

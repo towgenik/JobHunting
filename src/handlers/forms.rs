@@ -48,3 +48,8 @@ pub struct PipelineForm {
 }
 
 // ponytail: DeleteBatchForm removed — serde_urlencoded can't parse repeated
+
+#[derive(Deserialize)]
+pub struct ProfileLockForm {
+    pub unlocked_files: String,
+}

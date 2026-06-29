@@ -163,6 +163,9 @@ pub struct SettingsTemplate {
     // Pipeline tuning
     pub llm_concurrency:           i64,
     pub max_jobs_per_crawl:        i64,
+    // Profile lock
+    pub profile_unlocked_files:    Vec<String>,
+    pub profile_all_files:         Vec<String>,
 }
 
 #[derive(Template)]
@@ -171,6 +174,7 @@ pub struct ProfileTemplate {
     pub files:        Vec<ProfileFile>,
     pub current_file: String,
     pub content:      String,
+    pub is_locked:    bool,
 }
 
 #[derive(Template)]

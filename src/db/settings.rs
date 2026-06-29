@@ -193,3 +193,25 @@ pub async fn save_scheduler_config(pool: &SqlitePool, config: &SchedulerConfigRo
     .await?;
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// Profile lock — unlocked_files list
+// ---------------------------------------------------------------------------
+
+pub async fn get_unlocked_files(pool: &SqlitePool) -> Result<Vec<String>> {
+    use sqlx::Row;
+    let row = sqlx::query("SELECT profile_unlocked_files FROM settings WHERE id = 1")
+        .fetch_one(pool)
+        .await?;
+    let raw: String = row.try_get::<String, _>("profile_unlocked_files").unwrap_or_default();
+    Ok(raw.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect())
+}
+
+pub async fn save_unlocked_files(pool: &SqlitePool, files: &[String]) -> Result<()> {
+    let joined = files.join(",");
+    sqlx::query("UPDATE settings SET profile_unlocked_files = ? WHERE id = 1")
+        .bind(joined)
+        .execute(pool)
+        .await?;
+    Ok(())
+}

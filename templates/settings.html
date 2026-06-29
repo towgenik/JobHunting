@@ -135,6 +135,29 @@
 </section>
 
 <section>
+  <h3>Profile File Lock</h3>
+  <p style="font-size:.82rem; color:var(--text-secondary); margin-bottom:.5rem">
+    Checked files are locked by default in the editor (AI-managed). Uncheck to allow free editing.
+  </p>
+  <form hx-post="/settings/profile-lock" hx-target="#settings-status" hx-swap="innerHTML"
+        hx-on::before-request="collectUnlockedFiles()">
+    <input type="hidden" name="unlocked_files" id="unlocked-files-hidden">
+    <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:.3rem; margin-bottom:.5rem">
+    {% for file in profile_all_files %}
+      <label style="font-size:.82rem; display:flex; align-items:center; gap:.3rem; cursor:pointer">
+        <input type="checkbox" class="profile-lock-cb" data-file="{{ file }}"
+               {% if !profile_unlocked_files.contains(file) %}checked{% endif %}>
+        {{ file }}
+      </label>
+    {% endfor %}
+    </div>
+    <div class="btn-row">
+      <button type="submit">Save</button>
+    </div>
+  </form>
+</section>
+
+<section>
   <h3>Scheduler Runs (last 10)</h3>
   <div id="scheduler-runs"
        hx-ext="sse" sse-connect="/events"
@@ -143,4 +166,13 @@
     {% include "fragments/scheduler_runs.html" %}
   </div>
 </section>
+
+<script>
+function collectUnlockedFiles() {
+  const unchecked = Array.from(document.querySelectorAll('.profile-lock-cb'))
+    .filter(cb => !cb.checked)
+    .map(cb => cb.dataset.file);
+  document.getElementById('unlocked-files-hidden').value = unchecked.join(',');
+}
+</script>
 {% endblock %}

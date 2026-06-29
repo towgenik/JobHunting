@@ -266,6 +266,38 @@ async fn main() {
         }
     }
 
+    // File watcher — emits SSE profile-changed events for live editor sync
+    {
+        use notify_debouncer_mini::{new_debouncer, DebouncedEventKind};
+        use std::time::Duration;
+        let app_fw = state_with_wiki.clone();
+        let watch_dir = profile_dir.clone();
+        // ponytail: debouncer uses std channels; bridge into tokio via spawn_blocking
+        std::thread::spawn(move || {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let mut debouncer = match new_debouncer(Duration::from_secs(1), tx) {
+                Ok(d) => d,
+                Err(e) => { eprintln!("file watcher: init failed: {e}"); return; }
+            };
+            if let Err(e) = debouncer.watcher().watch(&watch_dir, notify_debouncer_mini::notify::RecursiveMode::Recursive) {
+                eprintln!("file watcher: watch failed: {e}"); return;
+            }
+            eprintln!("file watcher: watching {}", watch_dir.display());
+            while let Ok(Ok(events)) = rx.recv() {
+                for ev in events {
+                    if let DebouncedEventKind::AnyContinuous = ev.kind { continue; }
+                    let p = ev.path.to_string_lossy();
+                    if !p.ends_with(".md") { continue; }
+                    // Strip watch_dir prefix to get relative path for the frontend
+                    let rel = ev.path.strip_prefix(&watch_dir)
+                        .map(|r| r.to_string_lossy().to_string())
+                        .unwrap_or_else(|_| p.to_string());
+                    events::publish_profile_changed(&app_fw, &rel);
+                }
+            }
+        });
+    }
+
     // Background scheduler task — checks every 60s
     let db_bg = state_with_wiki.db.clone();
     let app_bg = state_with_wiki.clone();
@@ -316,6 +348,7 @@ async fn main() {
         .route("/crawl/status",      get(handlers::jobs::crawl_status))
         .route("/crawl/stop",        post(handlers::jobs::crawl_stop))
         .route("/profile",           get(handlers::profile::profile_page).post(handlers::profile::profile_save))
+        .route("/profile/load",      get(handlers::profile::profile_load))
         .route("/profile/print",     get(handlers::profile_print::profile_print))
         .route("/profile/sync",      post(handlers::profile::profile_sync))
         .route("/wiki/ingest",       post(handlers::wiki::wiki_ingest))
@@ -327,6 +360,7 @@ async fn main() {
         .route("/settings/agent",     post(handlers::settings::settings_agent_save))
         .route("/settings/pipeline",  post(handlers::settings::settings_pipeline_save))
         .route("/settings/test-llm",  post(handlers::settings::settings_test_llm))
+        .route("/settings/profile-lock", post(handlers::settings::settings_profile_lock_save))
         .route("/settings/scheduler-runs", get(handlers::settings::settings_scheduler_runs))
         .route("/scheduler/run",     post(handlers::settings::scheduler_run))
         .merge(api::api_router(state_with_wiki.clone()))

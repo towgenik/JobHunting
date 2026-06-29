@@ -22,3 +22,5 @@ askama_axum = "0.4"
 # keys into a Vec — serde_urlencoded (axum::Form) is flat-only and rejects
 # ids=A&ids=B for Vec<T> with a 422.
 form_urlencoded = "1"
+# ponytail: file watcher for live-syncing profile editor with disk changes
+notify-debouncer-mini = "0.4"

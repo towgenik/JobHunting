@@ -21,6 +21,12 @@ pub async fn settings_page(State(app): State<AppState>) -> impl IntoResponse {
     let runs = db::list_scheduler_runs(&app.db, 10).await.unwrap_or_default();
     let agent = db::get_agent_settings(&app.db).await.unwrap_or_default();
     let pipeline = db::get_pipeline_config(&app.db).await.unwrap_or_default();
+    let unlocked = db::get_unlocked_files(&app.db).await.unwrap_or_default();
+    let all_files: Vec<String> = crate::profile::list_profile_files()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|f| f.path)
+        .collect();
     SettingsTemplate {
         llm_endpoint: endpoint,
         llm_api_key: api_key,
@@ -39,6 +45,8 @@ pub async fn settings_page(State(app): State<AppState>) -> impl IntoResponse {
         wiki_auto_ingest: agent.wiki_auto_ingest,
         llm_concurrency:    pipeline.llm_concurrency,
         max_jobs_per_crawl: pipeline.max_jobs_per_crawl,
+        profile_unlocked_files: unlocked,
+        profile_all_files:      all_files,
     }
 }
 
@@ -184,4 +192,21 @@ pub async fn settings_test_llm(State(app): State<AppState>) -> Response {
             e.to_string().replace('&', "&amp;").replace('<', "&lt;")
         )).into_response(),
     }
+}
+
+// POST /settings/profile-lock — save profile unlocked files list
+pub async fn settings_profile_lock_save(
+    State(app): State<AppState>,
+    Form(body): Form<ProfileLockForm>,
+) -> Response {
+    let files: Vec<String> = body.unlocked_files
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if let Err(e) = db::save_unlocked_files(&app.db, &files).await {
+        return Html(format!("<span style=\"color:var(--status-err)\">Save failed: {}</span>",
+            e.to_string().replace('&', "&amp;").replace('<', "&lt;"))).into_response();
+    }
+    Html("<span style=\"color:var(--status-ok)\">Profile lock settings saved.</span>").into_response()
 }
