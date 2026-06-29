@@ -46,13 +46,15 @@ pub async fn profile_load(
     // ponytail: inline HTML fragment, avoids Askama template parsing issues with # in hx-include
     Html(format!(
         r##"{lock_banner}
+<div id="editor-row">
 <div id="line-numbers"></div>
 <textarea id="editor" name="content"{readonly}
           hx-trigger="keyup changed delay:500ms"
           hx-post="/profile" hx-include="{file_field}"
           hx-target="#save-status" hx-swap="innerHTML">{content}</textarea>
 <input type="hidden" name="file" value="{file}" id="file-field"
-       data-locked="{locked}">"##,
+       data-locked="{locked}">
+</div>"##,
         lock_banner = lock_banner,
         readonly = readonly,
         file_field = "#file-field",

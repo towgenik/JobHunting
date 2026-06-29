@@ -14,7 +14,8 @@
   #sidebar a:hover { background:var(--surface-alt) }
   #sidebar a.selected { background:var(--accent); color:var(--accent-text) }
   /* Editor */
-  #editor-pane { flex:1; overflow:hidden; display:flex; position:relative; background:var(--bg-surface) }
+  #editor-pane { flex:1; overflow:hidden; display:flex; flex-direction:column; background:var(--bg-surface) }
+  #editor-row { display:flex; flex:1; overflow:hidden }
   #line-numbers { width:36px; text-align:right; padding:.6rem .4rem .6rem 0; font-family:monospace; font-size:.85rem; line-height:1.5; color:var(--text-secondary); overflow:hidden; background:var(--surface-alt); flex-shrink:0; user-select:none }
   #editor { flex:1; resize:none; font-family:monospace; font-size:.85rem; line-height:1.5; padding:.6rem; border:none; border-left:1px solid var(--border-subtle); outline:none; color:var(--text-primary); background:var(--bg-surface) }
   /* Preview */
@@ -60,13 +61,15 @@
       <button onclick="lockEditor()" class="secondary outline" style="font-size:.78rem;padding:.15rem .4rem;margin:0">Lock again</button>
     </div>
     {% endif %}
-    <div id="line-numbers"></div>
-    <textarea id="editor" name="content"{% if is_locked %} readonly{% endif %}
-              hx-trigger="keyup changed delay:500ms"
-              hx-post="/profile" hx-include="#file-field"
-              hx-target="#save-status" hx-swap="innerHTML">{{ content }}</textarea>
-    <input type="hidden" name="file" value="{{ current_file }}" id="file-field"
-           data-locked="{% if is_locked %}1{% else %}0{% endif %}">
+    <div id="editor-row">
+      <div id="line-numbers"></div>
+      <textarea id="editor" name="content"{% if is_locked %} readonly{% endif %}
+                hx-trigger="keyup changed delay:500ms"
+                hx-post="/profile" hx-include="#file-field"
+                hx-target="#save-status" hx-swap="innerHTML">{{ content }}</textarea>
+      <input type="hidden" name="file" value="{{ current_file }}" id="file-field"
+             data-locked="{% if is_locked %}1{% else %}0{% endif %}">
+    </div>
   </div>
 
   <div id="preview-pane">
