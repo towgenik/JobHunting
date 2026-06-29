@@ -159,10 +159,7 @@
 
 <section>
   <h3>Scheduler Runs (last 10)</h3>
-  <div id="scheduler-runs"
-       hx-ext="sse" sse-connect="/events"
-       hx-get="/settings/scheduler-runs" hx-trigger="sse:scheduler-finished"
-       hx-swap="innerHTML">
+  <div id="scheduler-runs">
     {% include "fragments/scheduler_runs.html" %}
   </div>
 </section>
@@ -174,5 +171,10 @@ function collectUnlockedFiles() {
     .map(cb => cb.dataset.file);
   document.getElementById('unlocked-files-hidden').value = unchecked.join(',');
 }
+(function() {
+  const src = window.__sse;
+  if (!src) return;
+  src.addEventListener('scheduler-finished', () => htmx.ajax('GET', '/settings/scheduler-runs', {target: '#scheduler-runs', swap: 'innerHTML'}));
+})();
 </script>
 {% endblock %}

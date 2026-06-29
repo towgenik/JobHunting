@@ -7,10 +7,7 @@
 </style>
 <div id="dashboard">
   <div style="display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; padding:.4rem .6rem">
-    <div id="crawl-status"
-         hx-ext="sse" sse-connect="/events"
-         hx-get="/crawl/status" hx-trigger="sse:crawl-progress, sse:crawl-finished"
-         hx-swap="innerHTML" style="flex:1">{{ crawl_html|safe }}</div>
+    <div id="crawl-status" style="flex:1">{{ crawl_html|safe }}</div>
     <button hx-post="/scheduler/run"
             hx-target="#crawl-status"
             hx-swap="innerHTML"
@@ -32,4 +29,13 @@
   {% include "fragments/job_list.html" %}
   </div>
 </div>
+<script>
+(function() {
+  const src = window.__sse;
+  if (!src) return;
+  const refresh = () => htmx.ajax('GET', '/crawl/status', {target: '#crawl-status', swap: 'innerHTML'});
+  src.addEventListener('crawl-progress', refresh);
+  src.addEventListener('crawl-finished', refresh);
+})();
+</script>
 {% endblock %}
