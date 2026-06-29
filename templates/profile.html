@@ -324,9 +324,10 @@
     }
   };
 
-  // SSE listener — profile-changed event from file watcher
+  // SSE listener — profile-changed event from file watcher (uses shared SSE from base.html)
   (function() {
-    const src = new EventSource('/events');
+    const src = window.__sse;
+    if (!src) return;
     src.addEventListener('profile-changed', function(ev) {
       let d;
       try { d = JSON.parse(ev.data); } catch { return; }

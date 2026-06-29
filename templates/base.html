@@ -85,9 +85,15 @@
     {% block content %}{% endblock %}
   </main>
   <script>
-    // SSE client — debounced list refresh. No polling, no reload.
+    // Global SSE connection — shared by all pages to avoid connection limits.
+    // Each page adds listeners to window.__sse instead of opening new connections.
     (function() {
       const source = new EventSource('/events');
+      window.__sse = source;
+      window.addEventListener('beforeunload', () => source.close());
+      window.addEventListener('pagehide', () => source.close());
+
+      // Job list refresh (jobs page only)
       let timer = null;
       const refreshList = () => {
         if (timer) return;
