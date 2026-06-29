@@ -3,7 +3,7 @@ use axum::{
     response::{Html, IntoResponse, Response},
 };
 use std::sync::atomic::Ordering;
-use crate::{AppState, db, crawler, templates::SettingsTemplate};
+use crate::{AppState, db, events, crawler, templates::{SettingsTemplate, SchedulerRunsTemplate}};
 use super::forms::*;
 use super::BoolGuard;
 
@@ -156,11 +156,19 @@ pub async fn scheduler_run(
         if let Err(e) = crawler::scheduler_browse(app_bg.clone(), date_range, max_pages).await {
             let errors = serde_json::to_string(&[format!("{e}")]).unwrap_or_default();
             let _ = db::finish_scheduler_run(&app_bg.db, run_id, Some(&errors)).await;
+            events::publish_scheduler_run_finished(&app_bg, run_id, "error");
             return;
         }
         let _ = db::finish_scheduler_run(&app_bg.db, run_id, None).await;
+        events::publish_scheduler_run_finished(&app_bg, run_id, "ok");
     });
 
     (axum::http::StatusCode::ACCEPTED,
      Html(format!("Accepted: firehose browse (date_range={date_range}, max_pages={max_pages})"))).into_response()
+}
+
+// GET /settings/scheduler-runs — returns just the runs table fragment (for SSE refresh)
+pub async fn settings_scheduler_runs(State(app): State<AppState>) -> Response {
+    let runs = db::list_scheduler_runs(&app.db, 10).await.unwrap_or_default();
+    SchedulerRunsTemplate { scheduler_runs: runs }.into_response()
 }

@@ -182,3 +182,9 @@ pub struct CvPrintTemplate {
     pub experiences:  Vec<Experience>,
 }
 
+#[derive(Template)]
+#[template(path = "fragments/scheduler_runs.html")]
+pub struct SchedulerRunsTemplate {
+    pub scheduler_runs: Vec<SchedulerRunRow>,
+}
+

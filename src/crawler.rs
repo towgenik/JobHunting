@@ -49,6 +49,7 @@ async fn process_discovered_urls(app: &AppState, search_id: Uuid, urls: Vec<Stri
         let hint = url_hint(url);
         spawned += 1;
         set_crawl_activity(&app_clone, Some(search_id), &format!("Spawned {spawned}/{total}: {hint}"));
+        events::publish_crawl_progress(app, &format!("Spawned {spawned}/{total}: {hint}"));
 
         handles.push(tokio::spawn(async move {
             if let Err(e) = generate::process_job(&app_clone, job_id).await {
@@ -70,6 +71,7 @@ async fn process_discovered_urls(app: &AppState, search_id: Uuid, urls: Vec<Stri
     }
 
     set_crawl_activity(app, Some(search_id), &format!("Completed {spawned}/{total} jobs"));
+    events::publish_crawl_finished(app);
     finish_crawl_activity(app);
 }
 
@@ -143,6 +145,7 @@ pub async fn scheduler_browse(app: AppState, date_range: u32, max_pages: u32) ->
     if jobs.is_empty() {
         eprintln!("scheduler_browse: no jobs found for date_range={date_range}");
         set_crawl_activity(&app, Some(sid), "Scheduler: no jobs found");
+        events::publish_crawl_finished(&app);
         finish_crawl_activity(&app);
         return Ok(());
     }
@@ -167,6 +170,7 @@ pub async fn scheduler_browse(app: AppState, date_range: u32, max_pages: u32) ->
               urls_to_process.len());
 
     if urls_to_process.is_empty() {
+        events::publish_crawl_finished(&app);
         finish_crawl_activity(&app);
         return Ok(());
     }
@@ -186,6 +190,7 @@ pub async fn scheduler_browse(app: AppState, date_range: u32, max_pages: u32) ->
     process_discovered_urls(&app, search_id, urls_to_process).await;
 
     eprintln!("scheduler_browse: done");
+    events::publish_crawl_finished(&app);
     finish_crawl_activity(&app);
     Ok(())
 }

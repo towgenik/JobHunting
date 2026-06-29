@@ -131,24 +131,11 @@
 
 <section>
   <h3>Scheduler Runs (last 10)</h3>
-  {% if scheduler_runs.is_empty() %}
-  <p style="color:var(--text-secondary); font-size:.82rem">No runs yet.</p>
-  {% else %}
-  <table>
-    <thead><tr><th>Started</th><th>Finished</th><th>Q</th><th>Found</th><th>Filt</th><th>Status</th></tr></thead>
-    <tbody>
-    {% for run in scheduler_runs %}
-      <tr>
-        <td>{{ run.started_at }}</td>
-        <td>{{ run.finished_at.as_deref().unwrap_or("…") }}</td>
-        <td>{{ run.queries_run }}</td>
-        <td>{{ run.jobs_found }}</td>
-        <td>{{ run.jobs_filtered }}</td>
-        <td>{{ run.status }}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  {% endif %}
+  <div id="scheduler-runs"
+       hx-ext="sse" sse-connect="/events"
+       hx-get="/settings/scheduler-runs" hx-trigger="sse:scheduler-finished"
+       hx-swap="innerHTML">
+    {% include "fragments/scheduler_runs.html" %}
+  </div>
 </section>
 {% endblock %}
