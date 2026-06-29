@@ -23,6 +23,50 @@ pub fn build_llm_request(app: &AppState, body: &Value) -> reqwest::RequestBuilde
     }
 }
 
+/// Test LLM connection with a minimal prompt. Returns Ok(latency_ms) or Err.
+pub async fn test_llm_connection(app: &AppState) -> Result<u64> {
+    let (model, openai_compat) = {
+        let cfg = app.llm_config.read().unwrap_or_else(|e| e.into_inner());
+        (cfg.model.clone(), cfg.openai_compat)
+    };
+    let body = if openai_compat {
+        json!({
+            "model": model,
+            "messages": [{"role": "user", "content": "Say hi"}],
+            "max_tokens": 16,
+            "stream": false,
+        })
+    } else {
+        json!({
+            "model": model,
+            "max_tokens": 16,
+            "messages": [{"role": "user", "content": "Say hi"}],
+        })
+    };
+    let start = std::time::Instant::now();
+    let req = build_llm_request(app, &body);
+    let resp = req.send().await?;
+    let status = resp.status();
+    let elapsed = start.elapsed().as_millis() as u64;
+    if !status.is_success() {
+        let text = resp.text().await.unwrap_or_default();
+        anyhow::bail!("HTTP {status}: {text}");
+    }
+    let json: Value = resp.json().await?;
+    // Verify we got a valid response — check content or reasoning_content
+    let has_content = if openai_compat {
+        json.pointer("/choices/0/message/content").and_then(|v| v.as_str()).map(|s| !s.is_empty()).unwrap_or(false)
+        || json.pointer("/choices/0/message/reasoning_content").and_then(|v| v.as_str()).map(|s| !s.is_empty()).unwrap_or(false)
+    } else {
+        json.pointer("/content/0/text").and_then(|v| v.as_str()).is_some()
+    };
+    if has_content {
+        Ok(elapsed)
+    } else {
+        anyhow::bail!("No content in response: {}", serde_json::to_string(&json).unwrap_or_default().chars().take(200).collect::<String>())
+    }
+}
+
 /// Extract a JSON object from arbitrary text. Handles:
 /// 1. Pure JSON
 /// 2. JSON wrapped in markdown code fences
@@ -238,6 +282,22 @@ pub async fn call_llm_tool(
     mock: Value,
     reasoning_effort: Option<&str>,
 ) -> Result<Value> {
+    call_llm_tool_with_progress(app, prompt, max_tokens, tool_name, tool_desc, schema, mock, reasoning_effort, None, None).await
+}
+
+/// Same as call_llm_tool but with optional progress callback after semaphore acquired.
+pub async fn call_llm_tool_with_progress(
+    app: &AppState,
+    prompt: &str,
+    max_tokens: u32,
+    tool_name: &str,
+    tool_desc: &str,
+    schema: &Value,
+    mock: Value,
+    reasoning_effort: Option<&str>,
+    job_id: Option<uuid::Uuid>,
+    progress_msg: Option<&str>,
+) -> Result<Value> {
     let (mock_llm, model, openai_compat) = {
         let cfg = app.llm_config.read().unwrap_or_else(|e| e.into_inner());
         (cfg.mock_llm, cfg.model.clone(), cfg.openai_compat)
@@ -251,6 +311,12 @@ pub async fn call_llm_tool(
         .acquire()
         .await
         .map_err(|e| anyhow::anyhow!("semaphore error: {e}"))?;
+
+    // Set progress AFTER semaphore acquired — job is now actively being processed
+    if let (Some(jid), Some(msg)) = (job_id, progress_msg) {
+        let _ = crate::db::set_progress(&app.db, jid, msg).await;
+        crate::events::publish_job_update(app, jid, "pre_screening", msg);
+    }
 
     let mut messages = vec![json!({"role": "user", "content": prompt})];
     let mut last_error: Option<String> = None;

@@ -169,6 +169,9 @@ pub async fn scheduler_browse(app: AppState, date_range: u32, max_pages: u32) ->
     eprintln!("scheduler_browse: {found_count} found, {filtered_count} filtered, {} proceeding",
               urls_to_process.len());
 
+    // Reverse so oldest listings get screened first (before they expire)
+    urls_to_process.reverse();
+
     if urls_to_process.is_empty() {
         events::publish_crawl_finished(&app);
         finish_crawl_activity(&app);

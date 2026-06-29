@@ -37,7 +37,23 @@
     {% if job.status == "generated" %}
     <mark style="background:var(--accent);color:var(--accent-text);font-size:.8rem;white-space:nowrap;flex-shrink:0">ready</mark>
     {% else if job.status == "pre_screening" %}
-    <mark style="background:#e3f2fd;color:#1565c0;font-size:.8rem;white-space:nowrap;flex-shrink:0">screening…</mark>
+      {% if !job.progress.is_empty() %}
+      <mark style="background:#c8e6c9;color:#2e7d32;font-size:.8rem;white-space:nowrap;flex-shrink:0">● screening</mark>
+      {% else %}
+      <mark style="background:#e3f2fd;color:#1565c0;font-size:.8rem;white-space:nowrap;flex-shrink:0">○ queued</mark>
+      {% endif %}
+    {% else if job.status == "generating" %}
+      {% if !job.progress.is_empty() %}
+      <mark style="background:#c8e6c9;color:#2e7d32;font-size:.8rem;white-space:nowrap;flex-shrink:0">● generating</mark>
+      {% else %}
+      <mark style="background:#fff3e0;color:#e65100;font-size:.8rem;white-space:nowrap;flex-shrink:0">○ queued</mark>
+      {% endif %}
+    {% else if job.status == "scraping" %}
+      {% if !job.progress.is_empty() %}
+      <mark style="background:#c8e6c9;color:#2e7d32;font-size:.8rem;white-space:nowrap;flex-shrink:0">● scraping</mark>
+      {% else %}
+      <mark style="background:#e3f2fd;color:#1565c0;font-size:.8rem;white-space:nowrap;flex-shrink:0">○ queued</mark>
+      {% endif %}
     {% else %}
     <mark style="background:var(--surface-alt);color:var(--text-secondary);font-size:.8rem;white-space:nowrap;flex-shrink:0">{{ job.status }}</mark>
     {% endif %}

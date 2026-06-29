@@ -11,11 +11,12 @@ pub struct IndexTemplate {
 }
 
 pub struct JobRow {
-    pub id:     Uuid,
-    pub title:  String,
-    pub status: String,
-    pub score:  i64,
-    pub company: String,
+    pub id:       Uuid,
+    pub title:    String,
+    pub status:   String,
+    pub score:    i64,
+    pub company:  String,
+    pub progress: String,
 }
 
 #[derive(Template)]

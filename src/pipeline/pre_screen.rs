@@ -1,7 +1,6 @@
 use anyhow::Result;
 use serde_json::{json, Value};
 use crate::AppState;
-use crate::llm::call_llm_tool;
 use super::context::build_prompt;
 
 // ---------------------------------------------------------------------------
@@ -25,6 +24,7 @@ pub async fn pre_screen(
     description: &str,
     max_tokens: u32,
     reasoning_effort: Option<&str>,
+    job_id: Option<uuid::Uuid>,
 ) -> Result<(i64, String)> {
     let context = json!({
         "master_cv": master_cv,
@@ -38,10 +38,12 @@ pub async fn pre_screen(
         \n\
         Return ONLY {score, category}. No descriptions, no explanation. One line.";
 
-    let result = call_llm_tool(app, &build_prompt(task, &context), max_tokens,
+    let result = crate::llm::call_llm_tool_with_progress(app, &build_prompt(task, &context), max_tokens,
         "submit_review", "Submit your pre-screen verdict", &PRE_SCREEN_SCHEMA,
         json!({"score": 50, "category": "possible"}),
-        reasoning_effort
+        reasoning_effort,
+        job_id,
+        Some("Pre-screening: checking fit…"),
     ).await?;
 
     let score = result["score"].as_i64().unwrap_or(50).clamp(0, 100);

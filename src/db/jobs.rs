@@ -190,7 +190,14 @@ pub async fn get_job(pool: &SqlitePool, job_id: Uuid) -> Result<JobRecord> {
 pub async fn list_jobs(pool: &SqlitePool) -> Result<Vec<JobListRow>> {
     use sqlx::Row;
     let rows = sqlx::query(
-        "SELECT id, title, status, review_score, company FROM jobs ORDER BY rowid DESC"
+        "SELECT id, title, status, review_score, company, progress FROM jobs
+         ORDER BY CASE status
+           WHEN 'new' THEN 0
+           WHEN 'generating' THEN 1
+           WHEN 'scraping' THEN 2
+           WHEN 'pre_screening' THEN 3
+           ELSE 4
+         END, rowid DESC"
     )
     .fetch_all(pool)
     .await?;
@@ -204,6 +211,7 @@ pub async fn list_jobs(pool: &SqlitePool) -> Result<Vec<JobListRow>> {
                 status: r.try_get("status")?,
                 score: r.try_get::<Option<i64>, _>("review_score").ok().flatten(),
                 company: r.try_get::<Option<String>, _>("company")?.unwrap_or_default(),
+                progress: r.try_get::<Option<String>, _>("progress")?.unwrap_or_default(),
             })
         })
         .collect()
@@ -409,11 +417,12 @@ pub struct JobRecord {
 }
 
 pub struct JobListRow {
-    pub id:     Uuid,
-    pub title:  String,
-    pub status: String,
-    pub score:  Option<i64>,
-    pub company: String,
+    pub id:       Uuid,
+    pub title:    String,
+    pub status:   String,
+    pub score:    Option<i64>,
+    pub company:  String,
+    pub progress: String,
 }
 
 pub struct SchedulerRunRow {

@@ -64,8 +64,8 @@ pub struct AgentSettings {
 impl Default for AgentSettings {
     fn default() -> Self {
         Self {
-            ctx_window:          200_000,
-            max_output:          16384,
+            ctx_window:          1_048_576,
+            max_output:          131_072,
             thinking_effort:     "high".into(),
             wiki_query_max_hops: 10,
             wiki_auto_ingest:    false,

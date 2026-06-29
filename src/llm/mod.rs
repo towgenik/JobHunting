@@ -8,6 +8,7 @@ pub mod types;
 
 pub use transport::{
     call_llm_tool,
+    call_llm_tool_with_progress,
     call_llm_tool_loop,
 };
 pub use types::ToolDef;

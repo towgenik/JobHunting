@@ -41,6 +41,11 @@
     </div>
     <div class="btn-row">
       <button type="submit">Save</button>
+      <button type="button" class="outline"
+              hx-post="/settings/test-llm"
+              hx-target="#llm-test-status"
+              hx-swap="innerHTML">Test Connection</button>
+      <span id="llm-test-status" class="status-msg"></span>
     </div>
   </form>
 </section>
@@ -97,7 +102,7 @@
   <form hx-post="/settings/agent" hx-target="#settings-status" hx-swap="innerHTML">
     <div class="form-row">
       <label>Max output</label>
-      <input name="max_output" type="number" value="{{ agent_max_output }}" min="256" max="65536" style="max-width:120px">
+      <input name="max_output" type="number" value="{{ agent_max_output }}" min="256" style="max-width:120px">
       <span style="font-size:.82rem; color:var(--text-secondary)">tokens per LLM call</span>
     </div>
     <div class="form-row">
@@ -110,7 +115,7 @@
     </div>
     <div class="form-row">
       <label>Context window</label>
-      <input name="ctx_window" type="number" value="{{ agent_ctx_window }}" min="1000" step="1000" style="max-width:120px">
+      <input name="ctx_window" type="number" value="{{ agent_ctx_window }}" min="1000" style="max-width:120px">
       <span style="font-size:.82rem; color:var(--text-secondary)">tokens (declared budget for agent)</span>
     </div>
     <div class="form-row">

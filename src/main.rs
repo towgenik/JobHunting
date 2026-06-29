@@ -326,6 +326,7 @@ async fn main() {
         .route("/settings/scheduler", post(handlers::settings::settings_scheduler_save))
         .route("/settings/agent",     post(handlers::settings::settings_agent_save))
         .route("/settings/pipeline",  post(handlers::settings::settings_pipeline_save))
+        .route("/settings/test-llm",  post(handlers::settings::settings_test_llm))
         .route("/settings/scheduler-runs", get(handlers::settings::settings_scheduler_runs))
         .route("/scheduler/run",     post(handlers::settings::scheduler_run))
         .merge(api::api_router(state_with_wiki.clone()))

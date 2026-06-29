@@ -28,9 +28,6 @@ pub async fn process_job(app: &AppState, job_id: Uuid) -> Result<()> {
     db::update_job_data(&app.db, job_id, &job_data).await?;
     eprintln!("job {job_id}: scraped \"{}\" ({})", job_data["title"].as_str().unwrap_or("?"), job_data["company"].as_str().unwrap_or("?"));
 
-    db::set_status(&app.db, job_id, "generating").await?;
-    db::set_progress(&app.db, job_id, "Writer: drafting tailored CV…").await?;
-
     let master_cv = db::get_master_cv(&app.db).await?;
     let jd = job_data["description"].as_str().unwrap_or("").to_string();
 
@@ -47,8 +44,7 @@ pub async fn process_job(app: &AppState, job_id: Uuid) -> Result<()> {
     // Pre-screen: early exit if this job is a poor fit.
     // Use wiki index summary (cheap) instead of full master CV.
     db::set_status(&app.db, job_id, "pre_screening").await?;
-    db::set_progress(&app.db, job_id, "Pre-screening: checking fit…").await?;
-    publish_job_update(app, job_id, "pre_screening", "Pre-screening: checking fit…");
+    // Don't set progress yet — it will be set after LLM semaphore is acquired
     let job_title = job_data["title"].as_str().unwrap_or("");
     // ponytail: pre-screen gets index summary only — full wiki body is wasted
     // on a fit/no-fit decision. Falls back to master_cv if wiki is empty.
@@ -59,7 +55,7 @@ pub async fn process_job(app: &AppState, job_id: Uuid) -> Result<()> {
             .map(|g| g.index_body().to_string())
             .unwrap_or_else(|| master_cv.clone())
     };
-    let (pre_score, pre_category) = pre_screen(app, &prescreen_cv, job_title, &jd, max_output, Some(&thinking_effort)).await?;
+    let (pre_score, pre_category) = pre_screen(app, &prescreen_cv, job_title, &jd, max_output, Some(&thinking_effort), Some(job_id)).await?;
     eprintln!("job {job_id}: pre-screen score={pre_score} category={pre_category}");
     if pre_score < 50 {
         eprintln!("job {job_id}: skipped — score {pre_score} < 50, category={pre_category}");

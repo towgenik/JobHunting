@@ -28,7 +28,7 @@ pub async fn index(State(app): State<AppState>) -> impl IntoResponse {
     let rows = db::list_jobs(&app.db).await.unwrap_or_default();
     let jobs = rows
         .into_iter()
-        .map(|r| JobRow { id: r.id, title: r.title, status: r.status, score: r.score.unwrap_or(0), company: r.company })
+        .map(|r| JobRow { id: r.id, title: r.title, status: r.status, score: r.score.unwrap_or(0), company: r.company, progress: r.progress })
         .collect();
     let activity = app.crawl_activity.read().map(|a| a.clone()).unwrap_or_default();
     let active = activity.active;
@@ -49,7 +49,7 @@ pub async fn job_list(State(app): State<AppState>) -> Response {
     let rows = db::list_jobs(&app.db).await.unwrap_or_default();
     let jobs = rows
         .into_iter()
-        .map(|r| JobRow { id: r.id, title: r.title, status: r.status, score: r.score.unwrap_or(0), company: r.company })
+        .map(|r| JobRow { id: r.id, title: r.title, status: r.status, score: r.score.unwrap_or(0), company: r.company, progress: r.progress })
         .collect();
     JobListTemplate { jobs }.into_response()
 }

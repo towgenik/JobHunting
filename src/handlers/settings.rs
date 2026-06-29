@@ -91,7 +91,7 @@ pub async fn settings_agent_save(
 ) -> Response {
     let config = db::AgentSettings {
         ctx_window:          body.ctx_window.max(1000),
-        max_output:          body.max_output.clamp(256, 65536),
+        max_output:          body.max_output.max(256),
         thinking_effort:     body.thinking_effort,
         wiki_query_max_hops: body.wiki_query_max_hops.clamp(1, 50),
         wiki_auto_ingest:    body.wiki_auto_ingest.as_deref() == Some("on"),
@@ -171,4 +171,17 @@ pub async fn scheduler_run(
 pub async fn settings_scheduler_runs(State(app): State<AppState>) -> Response {
     let runs = db::list_scheduler_runs(&app.db, 10).await.unwrap_or_default();
     SchedulerRunsTemplate { scheduler_runs: runs }.into_response()
+}
+
+// POST /settings/test-llm — test LLM endpoint connectivity
+pub async fn settings_test_llm(State(app): State<AppState>) -> Response {
+    match crate::llm::transport::test_llm_connection(&app).await {
+        Ok(latency_ms) => Html(format!(
+            "<span style=\"color:var(--status-ok)\">OK — {}ms latency</span>", latency_ms
+        )).into_response(),
+        Err(e) => Html(format!(
+            "<span style=\"color:var(--status-err)\">Failed: {}</span>",
+            e.to_string().replace('&', "&amp;").replace('<', "&lt;")
+        )).into_response(),
+    }
 }
