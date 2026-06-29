@@ -43,7 +43,7 @@ services:
       - SESSION_FILE=/data/session.json
       - PROFILE_DIR=/profile
     volumes:
-      - ./profile:/profile:ro  # source of truth — read by Rust, edited by Claude Code
+      - ./profile:/profile:rw  # source of truth — read by Rust, edited by Claude Code + web GUI
       - app_data:/data         # SQLite + session.json persist here
     depends_on:
       - login
