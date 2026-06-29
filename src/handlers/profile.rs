@@ -38,10 +38,7 @@ pub async fn profile_load(
   <button onclick="unlockEditor()" style="font-size:.78rem;padding:.15rem .4rem;margin:0">Edit anyway</button>
 </div>"#
     } else {
-        r#"<div id="lock-banner" style="padding:.3rem .6rem;background:var(--surface-alt);border-bottom:1px solid var(--border-subtle);font-size:.8rem;display:flex;align-items:center;gap:.5rem">
-  <span style="color:var(--text-secondary)">Unlocked</span>
-  <button onclick="lockEditor()" class="secondary outline" style="font-size:.78rem;padding:.15rem .4rem;margin:0">Lock again</button>
-</div>"#
+        ""
     };
     // ponytail: inline HTML fragment, avoids Askama template parsing issues with # in hx-include
     Html(format!(
