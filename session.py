@@ -2,7 +2,7 @@
 # NOTE: jobstreet.co.id redirects to id.jobstreet.com; cookies live under .jobstreet.com
 # and id.jobstreet.com. SESSION_HOST default is "jobstreet.com" to catch both.
 # This is the ONLY use of the container's CDP port; scraping never drives the VNC browser.
-# ponytail: raw playwright connect_over_cdp — scrapling already depends on playwright
+# ponytail: connect_over_cdp — WebSocket to existing Chrome, no browser launch needed
 import json, os
 from pathlib import Path
 from playwright.sync_api import sync_playwright

@@ -1,0 +1,20 @@
+{% if active %}
+<div style="display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; padding:.4rem .6rem">
+  <strong>{% if stopping %}Stopping…{% else %}Crawling{% endif %}</strong>
+  {% if total > 0 %}
+  <span style="font-variant-numeric:tabular-nums">{{ terminal }}/{{ total }}</span>
+  {% endif %}
+  <span style="color:var(--text-secondary); flex:1; min-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">
+    {{ message }}
+  </span>
+  {% if !stopping %}
+  <button hx-post="/crawl/stop"
+          hx-target="#crawl-status"
+          hx-swap="innerHTML"
+          class="secondary outline"
+          style="font-size:.75rem; padding:.15rem .5rem">Stop</button>
+  {% else %}
+  <span class="secondary" style="font-size:.75rem; padding:.15rem .5rem">wait…</span>
+  {% endif %}
+</div>
+{% endif %}

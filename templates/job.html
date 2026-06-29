@@ -1,27 +1,23 @@
 {% extends "base.html" %}
 {% block content %}
-<a href="/">← Back to jobs</a>
+<style>
+  main.container { max-width:100%; padding:0; margin:0; display:flex; flex-direction:column; height:100vh }
+  nav { padding:.4rem 1rem; flex-shrink:0; border-bottom:1px solid var(--border-subtle) }
+  #workspace { flex:1; display:flex; overflow:hidden }
+</style>
 
-<div class="grid">
-  <section>
-    <h2>Job Description</h2>
-    <pre style="white-space:pre-wrap; font-size:.9rem">{{ description }}</pre>
-  </section>
-  <section>
-    <h2>Generated CV</h2>
-
-    {% if status == "pending_approval" || status == "approved" %}
-    <a href="/jobs/{{ id }}/cv" target="_blank" role="button" class="outline" style="margin-bottom:.5rem">📄 Download PDF</a>
+<div id="workspace">
+  <section style="width:35%; min-width:350px; overflow:auto; padding:0.5rem; border-right:1px solid var(--border-subtle)">
+    <a href="/" style="font-size:.85rem; margin-right:1rem">← Back</a>
+    {% if status == "generated" %}
+    <a href="/jobs/{{ id }}/cv" target="_blank" role="button" class="outline" style="font-size:.8rem; padding:.2rem .5rem">📄 PDF</a>
     {% endif %}
 
-    {% if status == "approved" %}
-    <mark style="background:var(--status-ok); color:var(--status-ok-text)">Approved</mark>
-    {% else if status == "rejected" %}
-    <mark style="background:var(--status-err); color:var(--status-err-text)">Rejected</mark>
-      {% if reject_reason != "" %}
-      <p><em>Reason:</em> {{ reject_reason }}</p>
-      {% endif %}
+    {% if !company.is_empty() %}
+    <h1 style="font-size:1.2rem; margin:.5rem 0 .1rem">{{ company }}</h1>
     {% endif %}
+    <h2 style="font-size:1rem; margin:.2rem 0 .4rem; color:var(--text-secondary)">{{ title }}</h2>
+    <p style="font-size:.78rem; margin:.4rem 0"><a href="{{ url }}" target="_blank" style="word-break:break-all">{{ url }}</a></p>
 
     {% if review_notes != "" %}
     <p style="font-size:.82rem; color:var(--text-secondary); border-left:2px solid var(--accent); padding-left:.5rem; margin:.4rem 0">
@@ -29,62 +25,57 @@
     </p>
     {% endif %}
 
-    <p>{{ cv.summary }}</p>
-    <ul>{% for s in cv.skills %}<li>{{ s }}</li>{% endfor %}</ul>
-    {% for exp in cv.experiences %}
-      <h3>{{ exp.role }} — {{ exp.company }}</h3>
-      <ul>{% for bp in exp.bullet_points %}<li>{{ bp }}</li>{% endfor %}</ul>
-    {% endfor %}
+    <h2 style="font-size:1rem; margin-top:.5rem">Job Description</h2>
+    <pre style="white-space:pre-wrap; font-size:.82rem; line-height:1.4">{{ description }}</pre>
 
     {% if let Some(r) = review %}
-    <section style="margin-top:1.5rem; padding:1rem; background:var(--surface-alt); border-radius:.5rem">
-      <h3>HR Review</h3>
-      <p><strong>Score:</strong> {{ r.score }}/100
+    <section style="margin-top:0.75rem; padding:.5rem; background:var(--surface-alt); border-radius:.4rem">
+      <h3 style="font-size:.9rem; margin-bottom:.3rem">HR Review</h3>
+      <p style="font-size:.82rem"><strong>Score:</strong> {{ r.score }}/100
         {% if r.score >= 85 %}
         <mark style="background:var(--status-ok); color:var(--status-ok-text)">pass</mark>
         {% else %}
         <mark style="background:var(--status-err); color:var(--status-err-text)">needs work</mark>
         {% endif %}
       </p>
-      <p>{{ r.feedback }}</p>
+      <p style="font-size:.82rem; white-space:pre-wrap">{{ r.feedback }}</p>
     </section>
     {% endif %}
 
     {% if let Some(v) = verification %}
-    <section style="margin-top:1.5rem; padding:1rem; background:var(--surface-alt); border-radius:.5rem">
-      <h3 style="margin-bottom:.5rem">Verification — {{ v.truth_pct }}% truth</h3>
+    <section style="margin-top:0.5rem; padding:.5rem; background:var(--surface-alt); border-radius:.4rem">
+      <h3 style="font-size:.9rem; margin-bottom:.3rem">Verification — {{ v.truth_pct }}% truth</h3>
 
       {% if v.incomplete %}
-      <p style="color:var(--status-err); font-size:.85rem"><em>⚠ Incomplete — percentage may be unreliable.</em></p>
+      <p style="color:var(--status-err); font-size:.8rem"><em>⚠ Incomplete — percentage may be unreliable.</em></p>
       {% endif %}
       {% if v.fabrication_detected %}
-      <p style="color:var(--status-err); font-size:.85rem"><em>⚠ Fabrication detected — editor fallback used.</em></p>
+      <p style="color:var(--status-err); font-size:.8rem"><em>⚠ Fabrication detected — editor fallback used.</em></p>
       {% endif %}
 
-      <div style="display:flex; gap:.125rem; height:1rem; border-radius:.25rem; overflow:hidden; margin-bottom:.5rem" aria-hidden="true">
+      <div style="display:flex; gap:.125rem; height:.75rem; border-radius:.2rem; overflow:hidden; margin-bottom:.4rem" aria-hidden="true">
         {% for item in v.items %}
         <div style="flex:1; background:{% if item.verdict == "truth" %}var(--status-ok){% else %}var(--status-err){% endif %}"
              title="{{ item.field }} — {{ item.verdict }}"></div>
         {% endfor %}
       </div>
 
-      {# Show only lies inline — truths are expected noise #}
       <ul style="list-style:none; padding:0; margin:0">
         {% for item in v.items %}{% if item.verdict == "lie" %}
-        <li style="margin:.2rem 0; padding:.3rem .5rem; border-left:.3rem solid var(--status-err); background:var(--surface); font-size:.85rem">
+        <li style="margin:.15rem 0; padding:.2rem .4rem; border-left:.25rem solid var(--status-err); background:var(--surface); font-size:.8rem">
           <strong>{{ item.category }}</strong> — {{ item.claim }}
           <span style="color:var(--text-secondary)"> · not in master CV</span>
         </li>
         {% endif %}{% endfor %}
       </ul>
 
-      <details style="margin-top:.5rem; font-size:.82rem">
+      <details style="margin-top:.4rem; font-size:.78rem">
         <summary style="cursor:pointer; color:var(--text-secondary)">All claims ({{ v.items.len() }})</summary>
-        <ul style="list-style:none; padding:0; margin-top:.3rem">
+        <ul style="list-style:none; padding:0; margin-top:.2rem">
           {% for item in v.items %}
-          <li style="margin:.15rem 0; padding:.25rem .4rem; border-left:.2rem solid
+          <li style="margin:.1rem 0; padding:.15rem .3rem; border-left:.2rem solid
                      {% if item.verdict == "truth" %}var(--status-ok){% else %}var(--status-err){% endif %};
-                     font-size:.8rem">
+                     font-size:.76rem">
             <span style="color:{% if item.verdict == "truth" %}var(--status-ok){% else %}var(--status-err){% endif %}">
               {% if item.verdict == "truth" %}✓{% else %}✗{% endif %}
             </span>
@@ -96,7 +87,7 @@
       </details>
 
       {% if v.gap_report != "" %}
-      <div style="margin-top:.5rem; padding:.5rem; background:var(--status-err); color:var(--status-err-text); border-radius:.25rem; font-size:.85rem">
+      <div style="margin-top:.4rem; padding:.4rem; background:var(--status-err); color:var(--status-err-text); border-radius:.2rem; font-size:.8rem">
         <strong>Gap:</strong> {{ v.gap_report }}
       </div>
       {% endif %}
@@ -104,55 +95,61 @@
     {% endif %}
 
     {% if let Some(rk) = rank %}
-    <section style="margin-top:1.5rem; padding:1rem; background:var(--surface-alt); border-radius:.5rem">
-      <h3>HR Approval Prediction</h3>
-      <p><strong>{{ rk.approval_probability }}%</strong> chance of HR shortlisting</p>
-
-      <div style="margin-top:.5rem">
+    <section style="margin-top:0.5rem; padding:.5rem; background:var(--surface-alt); border-radius:.4rem">
+      <h3 style="font-size:.9rem; margin-bottom:.3rem">HR Approval Prediction</h3>
+      <p style="font-size:.82rem"><strong>{{ rk.approval_probability }}%</strong> chance of HR shortlisting</p>
+      <div style="margin-top:.3rem; font-size:.8rem">
         <p><strong>Good:</strong></p>
         <ul>{% for g in rk.good %}<li>{{ g }}</li>{% endfor %}</ul>
       </div>
-
-      <div style="margin-top:.5rem">
+      <div style="margin-top:.3rem; font-size:.8rem">
         <p><strong>Bad:</strong></p>
         <ul>{% for b in rk.bad %}<li>{{ b }}</li>{% endfor %}</ul>
       </div>
-
-      <div style="margin-top:.5rem">
+      <div style="margin-top:.3rem; font-size:.8rem">
         <p><strong>Improvements:</strong></p>
         <ul>{% for i in rk.improvements %}<li>{{ i }}</li>{% endfor %}</ul>
       </div>
     </section>
     {% endif %}
 
-    {% if status == "pending_approval" %}
-    <div style="display:flex; gap:.5rem; margin-top:1rem">
-      <button hx-post="/jobs/{{ id }}/decision"
-              hx-vals='{"approved":"true"}'>👍 Like</button>
-      <button class="secondary"
-              hx-on:click="document.getElementById('dislike-box').style.display='block'">
-        👎 Dislike
-      </button>
-    </div>
-
-    <div id="dislike-box" style="display:none; margin-top:.5rem">
-      <textarea id="review-notes" name="review_notes"
-                placeholder="What would you change? (optional — feeds back into the writer)"
-                style="width:100%"></textarea>
-      <div style="display:flex; gap:.5rem; margin-top:.5rem">
-        <button hx-post="/jobs/{{ id }}/regenerate"
-                hx-include="#review-notes">
-          Regenerate
-        </button>
-        <button class="secondary outline"
-                hx-post="/jobs/{{ id }}/decision"
-                hx-vals='{"approved":"false"}'
-                hx-include="#review-notes">
-          Reject
-        </button>
+    {% if status == "generated" %}
+    <div style="margin-top:1rem; padding:.75rem; background:var(--surface-alt); border-radius:.4rem">
+      <div style="display:flex; gap:.75rem; align-items:flex-end">
+        <div style="flex:1">
+          <label for="review-notes" style="font-size:.82rem; color:var(--text-secondary)">Tell the writer what to fix (optional)</label>
+          <textarea id="review-notes" name="review_notes"
+                    placeholder="e.g. add Kubernetes to skills, shorten summary, use more metrics..."
+                    style="width:100%; min-height:3rem"></textarea>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:.3rem; white-space:nowrap">
+          <button hx-post="/jobs/{{ id }}/regenerate"
+                  hx-include="#review-notes">♻ Regenerate</button>
+          <a href="/profile" role="button" class="outline" style="font-size:.75rem; text-align:center">Edit master CV →</a>
+        </div>
       </div>
     </div>
     {% endif %}
   </section>
+
+  <section style="flex:1; overflow:hidden; display:flex; flex-direction:column; padding:.5rem; background:var(--surface-alt)">
+    <iframe src="/jobs/{{ id }}/cv"
+            style="flex:1; border:none; border-radius:6px; box-shadow:0 0 0 1px var(--border-subtle); background:#fff"></iframe>
+  </section>
 </div>
+
+<script>
+// Reload page when this job's status changes via SSE (fixes frozen conditional sections).
+(function() {
+  var source = new EventSource('/events');
+  source.onmessage = function(e) {
+    try {
+      var msg = JSON.parse(e.data);
+      if (msg.id === '{{ id }}' && msg.status !== '{{ status }}') {
+        location.reload();
+      }
+    } catch(err) {}
+  };
+})();
+</script>
 {% endblock %}

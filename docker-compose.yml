@@ -26,6 +26,13 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
+    # Reach host-side services (e.g. the LLM proxy on :20128) from inside the
+    # container. host-gateway resolves to the host IP as seen from this network;
+    # combined with the UFW allow-rule on 172.16.0.0/12:20128 this lets the app
+    # call the proxy via http://host.docker.internal:20128/...
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file: ../.env
     environment:
       - DATABASE_URL=sqlite:///data/jobagent.db
       - LLM_ENDPOINT=${LLM_ENDPOINT}
@@ -34,8 +41,10 @@ services:
       - CDP_URL=http://login:9223
       - SESSION_HOST=${SESSION_HOST:-jobstreet.com}
       - SESSION_FILE=/data/session.json
+      - PROFILE_DIR=/profile
     volumes:
-      - app_data:/data    # SQLite + session.json persist here
+      - ./profile:/profile:ro  # source of truth — read by Rust, edited by Claude Code
+      - app_data:/data         # SQLite + session.json persist here
     depends_on:
       - login
 

@@ -1,0 +1,24 @@
+[Unit]
+Description=JobHunting scheduled search trigger
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Read SCHEDULER_TOKEN from the same .env the compose file uses.
+EnvironmentFile=/home/user/Documents/projects/JobHunting/.env
+Environment="SCHEDULER_DATE_RANGE=1"
+Environment="SCHEDULER_MAX_PAGES=5"
+ExecStart=/usr/bin/curl -s -f -X POST \
+    http://localhost:3000/scheduler/run \
+    -H "Authorization: Bearer ${SCHEDULER_TOKEN}"
+# -f: treat HTTP 4xx/5xx as curl failure → systemd sees failure
+# -s: silent (no progress bar)
+
+# Log output to journald
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=jobhunting-scheduler
+
+# If the container is down, curl fails quickly (connection refused).
+# Let the timer retry on the next tick — no retry loop.

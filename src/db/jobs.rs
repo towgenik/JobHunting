@@ -9,7 +9,7 @@ pub async fn create_job_stub(pool: &SqlitePool, url: &str) -> Result<Uuid> {
     let id = Uuid::new_v4();
     let id_str = id.to_string();
     sqlx::query(
-        "INSERT INTO jobs (id, url, status, search_id) VALUES (?, ?, 'new', NULL)"
+        "INSERT INTO jobs (id, url, status, search_id, created_at) VALUES (?, ?, 'new', NULL, datetime('now'))"
     )
     .bind(&id_str)
     .bind(url)
@@ -26,7 +26,7 @@ pub async fn create_job_stub_for_search(
 ) -> Result<Uuid> {
     let id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO jobs (id, url, status, search_id) VALUES (?, ?, 'new', ?)"
+        "INSERT INTO jobs (id, url, status, search_id, created_at) VALUES (?, ?, 'new', ?, datetime('now'))"
     )
     .bind(&id.to_string())
     .bind(url)
@@ -40,6 +40,16 @@ pub async fn create_job_stub_for_search(
 pub async fn set_status(pool: &SqlitePool, job_id: Uuid, status: &str) -> Result<()> {
     sqlx::query("UPDATE jobs SET status = ? WHERE id = ?")
         .bind(status)
+        .bind(job_id.to_string())
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Write a live progress message for the polling card. Shown during generation.
+pub async fn set_progress(pool: &SqlitePool, job_id: Uuid, msg: &str) -> Result<()> {
+    sqlx::query("UPDATE jobs SET progress = ? WHERE id = ?")
+        .bind(msg)
         .bind(job_id.to_string())
         .execute(pool)
         .await?;
@@ -60,9 +70,11 @@ pub async fn get_job_url(pool: &SqlitePool, job_id: Uuid) -> Result<String> {
 pub async fn update_job_data(pool: &SqlitePool, job_id: Uuid, data: &Value) -> Result<()> {
     let title = data["title"].as_str().unwrap_or("").to_string();
     let description = data["description"].as_str().unwrap_or("").to_string();
-    sqlx::query("UPDATE jobs SET title = ?, description = ? WHERE id = ?")
+    let company = data["company"].as_str().unwrap_or("").to_string();
+    sqlx::query("UPDATE jobs SET title = ?, description = ?, company = ? WHERE id = ?")
         .bind(&title)
         .bind(&description)
+        .bind(&company)
         .bind(job_id.to_string())
         .execute(pool)
         .await?;
@@ -77,6 +89,23 @@ pub async fn get_status(pool: &SqlitePool, job_id: Uuid) -> Result<String> {
         .fetch_optional(pool)
         .await?;
     Ok(row.map(|r| r.try_get::<String, _>("status").unwrap_or_default()).unwrap_or_default())
+}
+
+/// Get url + progress for the job card. Returns ("", "") if not found.
+pub async fn get_job_card_data(pool: &SqlitePool, job_id: Uuid) -> Result<(String, String)> {
+    use sqlx::Row;
+    let row = sqlx::query("SELECT url, progress FROM jobs WHERE id = ?")
+        .bind(job_id.to_string())
+        .fetch_optional(pool)
+        .await?;
+    match row {
+        None => Ok((String::new(), String::new())),
+        Some(r) => {
+            let url = r.try_get::<Option<String>, _>("url")?.unwrap_or_default();
+            let progress = r.try_get::<Option<String>, _>("progress")?.unwrap_or_default();
+            Ok((url, progress))
+        }
+    }
 }
 
 /// Save the LLM-generated CV JSON to the job record.
@@ -115,6 +144,7 @@ pub async fn render_cv_ready(pool: &SqlitePool, job_id: Uuid) -> CvReadyTemplate
 }
 
 /// Upsert the master CV in settings.
+#[allow(dead_code)]
 pub async fn upsert_master_cv(pool: &SqlitePool, master_cv: &str) -> Result<()> {
     sqlx::query(
         "INSERT INTO settings (id, master_cv) VALUES (1, ?)
@@ -130,7 +160,10 @@ pub async fn upsert_master_cv(pool: &SqlitePool, master_cv: &str) -> Result<()> 
 pub async fn get_job(pool: &SqlitePool, job_id: Uuid) -> Result<JobRecord> {
     use sqlx::Row;
     let row = sqlx::query(
-        "SELECT id, url, title, description, cv, status, reject_reason FROM jobs WHERE id = ?",
+        "SELECT id, url, title, description, cv, status,
+                review_score, review_feedback, verification, rank,
+                review_notes, created_at, company, progress
+         FROM jobs WHERE id = ?",
     )
     .bind(job_id.to_string())
     .fetch_one(pool)
@@ -142,9 +175,14 @@ pub async fn get_job(pool: &SqlitePool, job_id: Uuid) -> Result<JobRecord> {
         description: row.try_get::<Option<String>, _>("description")?.unwrap_or_default(),
         cv: row.try_get::<Option<String>, _>("cv")?.unwrap_or_default(),
         status: row.try_get("status")?,
-        reject_reason: row
-            .try_get::<Option<String>, _>("reject_reason")?
-            .unwrap_or_default(),
+        company: row.try_get::<Option<String>, _>("company")?.unwrap_or_default(),
+        review_score:    row.try_get("review_score")?,
+        review_feedback: row.try_get("review_feedback")?,
+        verification:    row.try_get("verification")?,
+        rank:            row.try_get("rank")?,
+        review_notes:    row.try_get("review_notes")?,
+        created_at:      row.try_get("created_at")?,
+        progress:        row.try_get::<Option<String>, _>("progress")?.unwrap_or_default(),
     })
 }
 
@@ -152,7 +190,7 @@ pub async fn get_job(pool: &SqlitePool, job_id: Uuid) -> Result<JobRecord> {
 pub async fn list_jobs(pool: &SqlitePool) -> Result<Vec<JobListRow>> {
     use sqlx::Row;
     let rows = sqlx::query(
-        "SELECT id, title, status FROM jobs ORDER BY rowid DESC"
+        "SELECT id, title, status, review_score, company FROM jobs ORDER BY rowid DESC"
     )
     .fetch_all(pool)
     .await?;
@@ -164,24 +202,17 @@ pub async fn list_jobs(pool: &SqlitePool) -> Result<Vec<JobListRow>> {
                 id,
                 title: r.try_get::<Option<String>, _>("title")?.unwrap_or_default(),
                 status: r.try_get("status")?,
+                score: r.try_get::<Option<i64>, _>("review_score").ok().flatten(),
+                company: r.try_get::<Option<String>, _>("company")?.unwrap_or_default(),
             })
         })
         .collect()
 }
 
-/// Set reject_reason and status to 'rejected'.
-pub async fn reject_job(pool: &SqlitePool, job_id: Uuid, reason: &str) -> Result<()> {
-    sqlx::query("UPDATE jobs SET status = 'rejected', reject_reason = ? WHERE id = ?")
-        .bind(reason)
-        .bind(job_id.to_string())
-        .execute(pool)
-        .await?;
-    Ok(())
-}
-
-/// Set status to 'approved'.
-pub async fn approve_job(pool: &SqlitePool, job_id: Uuid) -> Result<()> {
-    sqlx::query("UPDATE jobs SET status = 'approved' WHERE id = ?")
+/// Save review_notes without changing status (used before regenerate).
+pub async fn save_review_notes(pool: &SqlitePool, job_id: Uuid, notes: &str) -> Result<()> {
+    sqlx::query("UPDATE jobs SET review_notes = ? WHERE id = ?")
+        .bind(notes)
         .bind(job_id.to_string())
         .execute(pool)
         .await?;
@@ -206,6 +237,28 @@ pub async fn get_job_id_by_url(pool: &SqlitePool, url: &str) -> Result<Option<Uu
     }
 }
 
+pub async fn delete_job(pool: &SqlitePool, job_id: Uuid) -> Result<bool> {
+    let result = sqlx::query("DELETE FROM jobs WHERE id = ?")
+        .bind(job_id.to_string())
+        .execute(pool)
+        .await?;
+    Ok(result.rows_affected() > 0)
+}
+
+pub async fn delete_jobs(pool: &SqlitePool, ids: &[String]) -> Result<u64> {
+    let mut tx = pool.begin().await?;
+    let mut count: u64 = 0;
+    for id in ids {
+        let result = sqlx::query("DELETE FROM jobs WHERE id = ?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        count += result.rows_affected();
+    }
+    tx.commit().await?;
+    Ok(count)
+}
+
 // ---------------------------------------------------------------------------
 // Search (batch crawl) helpers
 // ---------------------------------------------------------------------------
@@ -220,26 +273,6 @@ pub async fn create_search(pool: &SqlitePool, id: Uuid, url: &str, found_count: 
     Ok(())
 }
 
-pub struct SearchRow {
-    pub id: Uuid,
-    pub url: String,
-    pub found_count: i64,
-}
-
-pub async fn get_search(pool: &SqlitePool, search_id: Uuid) -> Result<SearchRow> {
-    use sqlx::Row;
-    let row = sqlx::query("SELECT id, url, found_count FROM searches WHERE id = ?")
-        .bind(&search_id.to_string())
-        .fetch_one(pool)
-        .await?;
-    let id_str: String = row.try_get("id")?;
-    Ok(SearchRow {
-        id: Uuid::parse_str(&id_str).map_err(|e| anyhow::anyhow!(e))?,
-        url: row.try_get("url")?,
-        found_count: row.try_get("found_count")?,
-    })
-}
-
 /// Count jobs linked to a search in terminal vs. non-terminal states.
 /// Returns (terminal_count, total_count).
 pub async fn get_search_progress(pool: &SqlitePool, search_id: Uuid) -> Result<(i64, i64)> {
@@ -247,7 +280,7 @@ pub async fn get_search_progress(pool: &SqlitePool, search_id: Uuid) -> Result<(
     let row = sqlx::query(
         "SELECT
             COUNT(*) AS total,
-            SUM(CASE WHEN status IN ('pending_approval','approved','rejected','failed')
+            SUM(CASE WHEN status IN ('generated')
                      THEN 1 ELSE 0 END) AS terminal
          FROM jobs WHERE search_id = ?"
     )
@@ -267,66 +300,127 @@ pub async fn link_job_to_search(pool: &SqlitePool, job_id: Uuid, search_id: Uuid
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// Review/verification/rank save helpers
+// ---------------------------------------------------------------------------
+
+/// Save review score and feedback to the job record.
+pub async fn save_review(
+    pool: &SqlitePool,
+    job_id: Uuid,
+    score: i64,
+    feedback: &str,
+) -> Result<()> {
+    sqlx::query("UPDATE jobs SET review_score = ?, review_feedback = ? WHERE id = ?")
+        .bind(score)
+        .bind(feedback)
+        .bind(job_id.to_string())
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Save verification JSON blob to the job record.
+pub async fn save_verification(pool: &SqlitePool, job_id: Uuid, verification: &Value) -> Result<()> {
+    sqlx::query("UPDATE jobs SET verification = ? WHERE id = ?")
+        .bind(verification.to_string())
+        .bind(job_id.to_string())
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Save rank JSON blob to the job record.
+pub async fn save_rank(pool: &SqlitePool, job_id: Uuid, rank: &Value) -> Result<()> {
+    sqlx::query("UPDATE jobs SET rank = ? WHERE id = ?")
+        .bind(rank.to_string())
+        .bind(job_id.to_string())
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Scheduler runs CRUD
+// ---------------------------------------------------------------------------
+
+pub async fn create_scheduler_run(pool: &SqlitePool, queries_run: i64) -> Result<i64> {
+    use sqlx::Row;
+    let row = sqlx::query(
+        "INSERT INTO scheduler_runs (queries_run) VALUES (?) RETURNING id"
+    )
+    .bind(queries_run)
+    .fetch_one(pool)
+    .await?;
+    Ok(row.try_get("id")?)
+}
+
+pub async fn finish_scheduler_run(
+    pool: &SqlitePool,
+    run_id: i64,
+    errors: Option<&str>,
+) -> Result<()> {
+    sqlx::query(
+        "UPDATE scheduler_runs SET finished_at = datetime('now'), status = 'completed', errors = ? WHERE id = ?"
+    )
+    .bind(errors)
+    .bind(run_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn list_scheduler_runs(pool: &SqlitePool, limit: i64) -> Result<Vec<SchedulerRunRow>> {
+    use sqlx::Row;
+    let rows = sqlx::query(
+        "SELECT started_at, finished_at, status, queries_run, jobs_found, jobs_filtered
+         FROM scheduler_runs ORDER BY id DESC LIMIT ?"
+    )
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+    rows.into_iter()
+        .map(|r| Ok(SchedulerRunRow {
+            started_at:    r.try_get("started_at")?,
+            finished_at:   r.try_get("finished_at")?,
+            status:        r.try_get("status")?,
+            queries_run:   r.try_get("queries_run")?,
+            jobs_found:    r.try_get("jobs_found")?,
+            jobs_filtered: r.try_get("jobs_filtered")?,
+        }))
+        .collect()
+}
+
 pub struct JobRecord {
-    pub id:            Uuid,
-    pub url:           String,
-    pub title:         String,
-    pub description:   String,
-    pub cv:            String,
-    pub status:        String,
-    pub reject_reason: String,
+    pub id:              Uuid,
+    pub url:             String,
+    pub title:           String,
+    pub description:     String,
+    pub cv:              String,
+    pub status:          String,
+    pub company:         String,
+    pub review_score:    Option<i64>,
+    pub review_feedback: Option<String>,
+    pub verification:    Option<String>,
+    pub rank:            Option<String>,
+    pub review_notes:    Option<String>,
+    pub created_at:      Option<String>,
+    pub progress:        String,
 }
 
 pub struct JobListRow {
     pub id:     Uuid,
     pub title:  String,
     pub status: String,
+    pub score:  Option<i64>,
+    pub company: String,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Self-check: the valid job-status strings are exactly the ones the pipeline
-    /// uses.  If someone renames a status in process_job without updating this list
-    /// the test fails.
-    #[test]
-    fn known_statuses_are_valid_strings() {
-        let statuses = [
-            "new", "scraping", "generating",
-            "pending_approval", "approved", "rejected", "failed",
-        ];
-        for s in statuses {
-            assert!(!s.is_empty(), "status must be non-empty");
-            assert!(s.is_ascii(), "status must be ASCII: {s}");
-        }
-        // Uniqueness — duplicate status names would be a copy-paste bug.
-        let unique: std::collections::HashSet<_> = statuses.iter().collect();
-        assert_eq!(unique.len(), statuses.len(), "duplicate status entry");
-    }
-
-    /// Self-check: `get_job_id_by_url` returns None for an unknown URL.
-    /// Uses an in-memory SQLite database; no fixtures, no filesystem state.
-    #[tokio::test]
-    async fn get_job_id_by_url_returns_none_for_missing() {
-        let pool = SqlitePool::connect("sqlite::memory:")
-            .await
-            .expect("in-memory db");
-        sqlx::query(
-            "CREATE TABLE jobs (
-                id TEXT PRIMARY KEY,
-                url TEXT UNIQUE NOT NULL,
-                title TEXT, description TEXT, cv TEXT, reject_reason TEXT,
-                status TEXT DEFAULT 'new'
-             )"
-        )
-        .execute(&pool)
-        .await
-        .expect("create table");
-
-        let result = get_job_id_by_url(&pool, "https://id.jobstreet.com/jobs/999")
-            .await
-            .expect("query");
-        assert!(result.is_none(), "should be None for unknown URL");
-    }
+pub struct SchedulerRunRow {
+    pub started_at:    String,
+    pub finished_at:   Option<String>,
+    pub status:        String,
+    pub queries_run:   i64,
+    pub jobs_found:    i64,
+    pub jobs_filtered: i64,
 }

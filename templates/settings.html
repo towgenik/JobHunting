@@ -1,11 +1,132 @@
 {% extends "base.html" %}
 {% block title %}Settings{% endblock %}
 {% block content %}
-<h1>Master CV</h1>
-<p>Paste your full CV here. This is the source material for all generated CVs.</p>
-<form hx-post="/settings" hx-swap="none">
-  <textarea name="master_cv" rows="30"
-            style="width:100%; font-family:monospace">{{ master_cv }}</textarea>
-  <button type="submit">Save</button>
-</form>
+<style>
+  main.container { max-width:800px; margin:0 auto; padding:1rem }
+  section { margin-bottom:1.5rem }
+  .form-row { display:flex; gap:.5rem; align-items:center; margin-bottom:.5rem }
+  .form-row label { min-width:110px; font-size:.85rem }
+  .form-row input { flex:1; min-width:0 }
+  .form-row input[type="checkbox"] { flex:none }
+  .btn-row { display:flex; gap:.5rem; margin-top:.5rem }
+  table { font-size:.82rem; width:100% }
+  th, td { padding:.2rem .4rem }
+  .status-msg { font-size:.82rem; min-height:1.2em }
+</style>
+
+<span id="settings-status" class="status-msg">{{ status }}</span>
+
+<section>
+  <h3>LLM Configuration</h3>
+  <form hx-post="/settings/llm" hx-target="#settings-status" hx-swap="innerHTML">
+    <div class="form-row">
+      <label>Model</label>
+      <input name="model" value="{{ llm_model }}" required>
+    </div>
+    <div class="form-row">
+      <label>Endpoint</label>
+      <input name="endpoint" value="{{ llm_endpoint }}" required>
+    </div>
+    <div class="form-row">
+      <label>API Key</label>
+      <input name="api_key" type="password" value="{{ llm_api_key }}">
+    </div>
+    <div class="form-row">
+      <label>OpenAI-compat</label>
+      <input type="checkbox" name="openai_compat"{% if llm_openai_compat %} checked{% endif %}>
+    </div>
+    <div class="form-row">
+      <label>Mock mode</label>
+      <input type="checkbox" name="mock_llm"{% if llm_mock %} checked{% endif %}>
+    </div>
+    <div class="btn-row">
+      <button type="submit">Save</button>
+    </div>
+  </form>
+</section>
+
+<section>
+  <h3>Scheduler</h3>
+  <form hx-post="/settings/scheduler" hx-target="#settings-status" hx-swap="innerHTML">
+    <div class="form-row">
+      <label>Run every</label>
+      <input name="interval_minutes" type="number" value="{{ scheduler_interval }}" min="0" style="max-width:100px">
+      <span style="font-size:.82rem; color:var(--text-secondary)">minutes (0 = disabled)</span>
+    </div>
+    <div class="form-row">
+      <label>Date range</label>
+      <input name="date_range" type="number" value="{{ scheduler_date_range }}" min="1" style="max-width:80px">
+      <span style="font-size:.82rem; color:var(--text-secondary)">days back</span>
+    </div>
+    <div class="form-row">
+      <label>Max pages</label>
+      <input name="max_pages" type="number" value="{{ scheduler_max_pages }}" min="1" style="max-width:80px">
+    </div>
+    <div class="btn-row">
+      <button type="submit">Save</button>
+      <button type="button" class="outline" onclick="document.getElementById('sched-status').innerHTML='Running…'; fetch('/scheduler/run',{method:'POST'}).then(r=>r.text()).then(t=>{document.getElementById('sched-status').innerHTML=t})">Run now</button>
+    </div>
+  </form>
+  <div id="sched-status" class="status-msg"></div>
+</section>
+
+<section>
+  <h3>Agent Settings</h3>
+  <form hx-post="/settings/agent" hx-target="#settings-status" hx-swap="innerHTML">
+    <div class="form-row">
+      <label>Max output</label>
+      <input name="max_output" type="number" value="{{ agent_max_output }}" min="256" max="65536" style="max-width:120px">
+      <span style="font-size:.82rem; color:var(--text-secondary)">tokens per LLM call</span>
+    </div>
+    <div class="form-row">
+      <label>Thinking effort</label>
+      <select name="thinking_effort" style="max-width:140px">
+        <option value="low"{% if agent_thinking_effort == "low" %} selected{% endif %}>Low</option>
+        <option value="medium"{% if agent_thinking_effort == "medium" %} selected{% endif %}>Medium</option>
+        <option value="high"{% if agent_thinking_effort == "high" %} selected{% endif %}>High</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <label>Context window</label>
+      <input name="ctx_window" type="number" value="{{ agent_ctx_window }}" min="1000" step="1000" style="max-width:120px">
+      <span style="font-size:.82rem; color:var(--text-secondary)">tokens (declared budget for agent)</span>
+    </div>
+    <div class="form-row">
+      <label>Wiki query hops</label>
+      <input name="wiki_query_max_hops" type="number" value="{{ agent_wiki_query_max_hops }}" min="1" max="50" style="max-width:80px">
+      <span style="font-size:.82rem; color:var(--text-secondary)">max traversal depth (future)</span>
+    </div>
+    <div class="form-row">
+      <label>Auto-ingest</label>
+      <input type="checkbox" name="wiki_auto_ingest"{% if wiki_auto_ingest %} checked{% endif %}>
+      <span style="font-size:.82rem; color:var(--text-secondary)">run wiki ingest on startup if raw/ changed</span>
+    </div>
+    <div class="btn-row">
+      <button type="submit">Save</button>
+    </div>
+  </form>
+</section>
+
+<section>
+  <h3>Scheduler Runs (last 10)</h3>
+  {% if scheduler_runs.is_empty() %}
+  <p style="color:var(--text-secondary); font-size:.82rem">No runs yet.</p>
+  {% else %}
+  <table>
+    <thead><tr><th>Started</th><th>Finished</th><th>Q</th><th>Found</th><th>Filt</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for run in scheduler_runs %}
+      <tr>
+        <td>{{ run.started_at }}</td>
+        <td>{{ run.finished_at.as_deref().unwrap_or("…") }}</td>
+        <td>{{ run.queries_run }}</td>
+        <td>{{ run.jobs_found }}</td>
+        <td>{{ run.jobs_filtered }}</td>
+        <td>{{ run.status }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
 {% endblock %}

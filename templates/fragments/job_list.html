@@ -1,0 +1,57 @@
+<div style="display:flex; gap:.5rem; align-items:center; margin-bottom:.5rem; flex-wrap:wrap">
+  <label style="font-size:.8rem; cursor:pointer">
+    {% if !jobs.is_empty() %}
+    <input type="checkbox" onclick="document.querySelectorAll('.job-select').forEach(cb => cb.checked = this.checked)" style="margin:0; width:auto">
+    {% endif %}
+    all
+  </label>
+  <button hx-post="/jobs/regenerate-batch"
+          hx-include=".job-select"
+          hx-target="#job-list"
+          hx-swap="innerHTML"
+          class="secondary outline"
+          style="font-size:.8rem; padding:.2rem .5rem">Regenerate selected</button>
+  <button hx-post="/jobs/delete-batch"
+          hx-confirm="Permanently delete selected jobs?"
+          hx-include=".job-select"
+          hx-target="#job-list"
+          hx-swap="innerHTML"
+          class="secondary outline"
+          style="font-size:.8rem; padding:.2rem .5rem">Delete selected</button>
+</div>
+
+{% for job in jobs %}
+<div style="display:flex; justify-content:space-between; align-items:center; padding:.35rem .5rem">
+  <span style="display:flex; align-items:center; gap:.4rem; flex:1; overflow:hidden">
+    <input type="checkbox" name="ids" value="{{ job.id }}" class="job-select" style="margin:0; width:auto; flex-shrink:0">
+    <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0">
+      {% if !job.company.is_empty() %}{{ job.company }} · {% endif %}{{ job.title }}
+    </span>
+    {% if job.score > 0 %}
+    <mark style="font-size:.8rem; white-space:nowrap; flex-shrink:0;
+      {% if job.score >= 85 %}background:var(--status-ok);color:var(--status-ok-text)
+      {% else if job.score >= 50 %}background:#ffc107;color:#222
+      {% else %}background:var(--status-err);color:var(--status-err-text)
+      {% endif %}">{{ job.score }}/100</mark>
+    {% endif %}
+    {% if job.status == "generated" %}
+    <mark style="background:var(--accent);color:var(--accent-text);font-size:.8rem;white-space:nowrap;flex-shrink:0">ready</mark>
+    {% else if job.status == "pre_screening" %}
+    <mark style="background:#e3f2fd;color:#1565c0;font-size:.8rem;white-space:nowrap;flex-shrink:0">screening…</mark>
+    {% else %}
+    <mark style="background:var(--surface-alt);color:var(--text-secondary);font-size:.8rem;white-space:nowrap;flex-shrink:0">{{ job.status }}</mark>
+    {% endif %}
+  </span>
+  <div style="display:flex; gap:.4rem; align-items:center; flex-shrink:0; margin-left:.5rem">
+    {% if job.status == "generated" %}
+    <a href="/jobs/{{ job.id }}" role="button" class="outline" style="font-size:.8rem; padding:.2rem .5rem">CV →</a>
+    {% endif %}
+    <button hx-delete="/jobs/{{ job.id }}/delete"
+            hx-confirm="Delete this job permanently?"
+            hx-target="closest div"
+            hx-swap="outerHTML"
+            class="secondary outline"
+            style="font-size:.8rem; padding:.15rem .4rem">✕</button>
+  </div>
+</div>
+{% endfor %}

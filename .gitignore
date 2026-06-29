@@ -9,6 +9,11 @@ __pycache__/
 *.pyc
 .venv/
 
+# Node (fallow dev tool)
+node_modules/
+package.json
+package-lock.json
+
 # Secrets & local config
 .env
 .env.*
@@ -27,3 +32,18 @@ session.json
 # OS junk
 .DS_Store
 Thumbs.db
+
+# Local-only config (user-specific permissions, not shared)
+.claude/settings.local.json
+
+# Tool runtime state
+.omo/
+.codegraph/codegraph.db
+.codegraph/daemon.log
+
+# opencode node deps (not the skills/config — those are tracked)
+.opencode/node_modules/
+
+# Local/dev skills (not committed)
+.opencode/skills/cv/
+.opencode/skills/scrape/

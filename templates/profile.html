@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+{% block title %}Profile{% endblock %}
+{% block content %}
+<style>
+  main.container { max-width:100%; padding:0; margin:0; display:flex; flex-direction:column; height:100vh }
+  nav { padding:.4rem 1rem; flex-shrink:0; border-bottom:1px solid var(--border-subtle) }
+  #toolbar { display:flex; gap:.4rem; align-items:center; padding:.3rem .5rem; border-bottom:1px solid var(--border-subtle); flex-shrink:0 }
+  #toolbar button { font-size:.78rem; padding:.2rem .5rem }
+  #toolbar .spacer { flex:1 }
+  #workspace { flex:1; display:flex; overflow:hidden }
+  /* Sidebar */
+  #sidebar { width:180px; min-width:80px; overflow:auto; border-right:1px solid var(--border-subtle); padding:.4rem; flex-shrink:0 }
+  #sidebar a { display:block; padding:.2rem .4rem; font-size:.82rem; text-decoration:none; color:var(--text-primary); border-radius:2px }
+  #sidebar a:hover { background:var(--surface-alt) }
+  #sidebar a.selected { background:var(--accent); color:var(--accent-text) }
+  /* Editor */
+  #editor-pane { flex:1; overflow:hidden; display:flex; position:relative; background:var(--bg-surface) }
+  #line-numbers { width:36px; text-align:right; padding:.6rem .4rem .6rem 0; font-family:monospace; font-size:.85rem; line-height:1.5; color:var(--text-secondary); overflow:hidden; background:var(--surface-alt); flex-shrink:0; user-select:none }
+  #editor { flex:1; resize:none; font-family:monospace; font-size:.85rem; line-height:1.5; padding:.6rem; border:none; border-left:1px solid var(--border-subtle); outline:none; color:var(--text-primary); background:var(--bg-surface) }
+  /* Preview */
+  #preview-pane { flex:1; overflow:auto; padding:.5rem; display:flex; justify-content:center; background:var(--surface-alt) }
+  #preview-wrap { position:relative; transform-origin:top left }
+  .hidden-panel { display:none !important }
+  /* Saved feedback */
+  #save-status { font-size:.78rem; color:var(--text-secondary); min-width:120px }
+</style>
+
+<div id="toolbar">
+  <button onclick="togglePanel('sidebar','btn-sidebar')" id="btn-sidebar">Files</button>
+  <button onclick="togglePanel('editor-pane','btn-editor')" id="btn-editor">Editor</button>
+  <button onclick="togglePanel('preview-pane','btn-preview')" id="btn-preview">Preview</button>
+  <span class="spacer"></span>
+  <span id="save-status"></span>
+  <button onclick="saveProfile()">Save</button>
+  <button class="outline" onclick="window.open('/profile/print?file={{ current_file|urlencode }}','_blank')">Download PDF</button>
+</div>
+
+<div id="workspace">
+  <div id="sidebar">
+    <strong style="font-size:.78rem; padding:.2rem .4rem; display:block; color:var(--text-secondary)">Files</strong>
+    {% for file in files %}
+    <a href="/profile?file={{ file.path|urlencode }}" class="{% if file.path == current_file %}selected{% endif %}">{{ file.name }}</a>
+    {% endfor %}
+  </div>
+
+  <div id="editor-pane">
+    <div id="line-numbers"></div>
+    <textarea id="editor" name="content"
+              hx-trigger="keyup changed delay:500ms"
+              hx-post="/profile" hx-include="#file-field"
+              hx-target="#save-status" hx-swap="innerHTML">{{ content }}</textarea>
+    <input type="hidden" name="file" value="{{ current_file }}" id="file-field">
+  </div>
+
+  <div id="preview-pane">
+    <div id="preview-wrap">
+      <iframe id="cv-frame" sandbox="allow-same-origin"
+              style="border:none; width:794px; height:1122px; transform-origin:top left; background:white; display:block; margin:0 auto">
+      </iframe>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+  const PREVIEW_CSS = `
+    @page { size:A4; margin:1.5cm }
+    * { margin:0; padding:0; box-sizing:border-box }
+    body {
+      font-family:'Georgia','Times New Roman',serif;
+      font-size:11pt; line-height:1.45; color:#222;
+      width:calc(794px - 3cm); padding:1.5cm;
+    }
+    header { text-align:center; margin-bottom:1.5em; padding-bottom:1em; border-bottom:1.5px solid #333 }
+    header .name { font-size:20pt; font-weight:700; letter-spacing:2pt; text-transform:uppercase; margin-bottom:.15em }
+    header .title { font-size:11pt; color:#555; font-style:italic }
+    h1 { font-size:14pt; margin:1.2em 0 .4em; border-bottom:1px solid #999; padding-bottom:.15em; text-transform:uppercase; letter-spacing:1pt }
+    h2 { font-size:12pt; margin:1em 0 .3em; border-bottom:1px solid #ccc; padding-bottom:.1em; text-transform:uppercase; letter-spacing:.5pt }
+    h3 { font-size:11pt; margin:.8em 0 .2em; font-weight:600 }
+    h4 { font-size:10.5pt; margin:.6em 0 .15em; font-weight:600; font-style:italic }
+    p  { margin:0 0 .5em; text-align:justify }
+    ul { margin:0 0 .6em 1.2em; list-style:square }
+    li { margin-bottom:.15em }
+    strong { color:#111 }
+  `;
+
+  const editor = document.getElementById('editor');
+  const lineNumbers = document.getElementById('line-numbers');
+  const frame = document.getElementById('cv-frame');
+
+  function showPageCount() {
+    frame.onload = function() {
+      const doc = frame.contentDocument;
+      if (!doc) return;
+      const h = doc.body.scrollHeight;
+      const wrap = document.getElementById('preview-wrap');
+      const scale = Math.min(1, (wrap.parentElement.clientWidth - 24) / 794);
+      frame.style.transform = `scale(${scale})`;
+      frame.style.height = (h * scale + 2) + 'px';
+    };
+    updatePreview();
+  }
+
+  function esc(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML }
+
+  function md2html(md) {
+    let fm = {};
+    let body = md;
+    const m = md.match(/^---\n([\s\S]*?)\n---\n?/);
+    if (m) {
+      body = md.slice(m[0].length);
+      let key = '', val = '';
+      m[1].split('\n').forEach(line => {
+        const fmkv = line.match(/^(\w+):\s*(.*)/);
+        if (fmkv) {
+          if (key) fm[key] = val;
+          key = fmkv[1]; val = fmkv[2].trim();
+          if ((val.startsWith('"') && val.endsWith('"')) ||
+              (val.startsWith("'") && val.endsWith("'"))) {
+            val = val.slice(1, -1);
+          }
+        } else if (key && line.startsWith('  - ')) {
+          val += '\n' + line.trim();
+        }
+      });
+      if (key) fm[key] = val;
+    }
+    let header = '';
+    const name = fm['name'] || '';
+    const title = fm['title'] || '';
+    if (name || title) {
+      header += '<header style="text-align:center;margin-bottom:1.2em">\n';
+      if (name) header += `  <div style="font-size:18pt;font-weight:700;letter-spacing:1pt;text-transform:uppercase;margin-bottom:.2em">${esc(name)}</div>\n`;
+      if (title) header += `  <div style="font-size:11pt;color:#555">${esc(title)}</div>\n`;
+      header += '</header>\n';
+    }
+    body = body.replace(/<!--[\s\S]*?-->/g, '');
+    body = body.replace(/\[\[[^\]]+\|([^\]]+)\]\]/g, '$1');
+    body = body.replace(/\[\[([^\]]+)\]\]/g, '$1');
+    return header + marked.parse(body);
+  }
+
+  function updatePreview() {
+    const rendered = md2html(editor.value);
+    frame.srcdoc = `<!DOCTYPE html><html><head><style>${PREVIEW_CSS}</style></head><body>${rendered}</body></html>`;
+  }
+
+  function updateLineNumbers() {
+    const lines = editor.value.split('\n');
+    lineNumbers.innerHTML = lines.map((_, i) => `<span>${i+1}</span>`).join('<br>');
+  }
+
+  function syncScroll() {
+    lineNumbers.scrollTop = editor.scrollTop;
+  }
+
+  editor.addEventListener('scroll', syncScroll);
+  editor.addEventListener('input', () => {
+    updateLineNumbers();
+    syncScroll();
+    updatePreview();
+  });
+
+  updateLineNumbers();
+  updatePreview();
+
+  // Panel toggling
+  let hiddenPanels = new Set();
+  function togglePanel(id, btnId) {
+    const el = document.getElementById(id);
+    const btn = document.getElementById(btnId);
+    if (el.classList.contains('hidden-panel')) {
+      el.classList.remove('hidden-panel');
+      btn.classList.remove('secondary');
+      hiddenPanels.delete(id);
+    } else {
+      if (hiddenPanels.size >= 2) return; // Keep at least one panel visible
+      el.classList.add('hidden-panel');
+      btn.classList.add('secondary');
+      hiddenPanels.add(id);
+    }
+    // Show page count when preview becomes visible
+    if (id === 'preview-pane' && !el.classList.contains('hidden-panel')) {
+      setTimeout(showPageCount, 100);
+    }
+  }
+
+  // HTMX after-settle: re-sync editor state after page load
+  document.body.addEventListener('htmx:afterSettle', function() {
+    const ed = document.getElementById('editor');
+    if (ed && ed !== editor) {
+      ed.addEventListener('scroll', function() {
+        document.getElementById('line-numbers').scrollTop = ed.scrollTop;
+      });
+      ed.addEventListener('input', function() {
+        const ln = document.getElementById('line-numbers');
+        const lines = ed.value.split('\n');
+        ln.innerHTML = lines.map((_, i) => `<span>${i+1}</span>`).join('<br>');
+        ln.scrollTop = ed.scrollTop;
+        updatePreview();
+      });
+    }
+    updateLineNumbers();
+    updatePreview();
+    showPageCount();
+  });
+
+  // Initial preview render — force re-render after iframe ready
+  frame.srcdoc = '';
+  requestAnimationFrame(() => {
+    updateLineNumbers();
+    updatePreview();
+    setTimeout(showPageCount, 100);
+  });
+
+  function saveProfile() {
+    const ed = document.getElementById('editor');
+    const fileField = document.getElementById('file-field');
+    const formData = new URLSearchParams();
+    formData.append('content', ed.value);
+    formData.append('file', fileField.value);
+    fetch('/profile', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:formData })
+      .then(r => r.text())
+      .then(t => { document.getElementById('save-status').innerHTML = t; });
+  }
+
+</script>
+{% endblock %}

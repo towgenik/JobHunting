@@ -1,33 +1,32 @@
 {% extends "base.html" %}
 {% block content %}
-<!-- Batch import: paste a listing/search URL to discover many jobs at once. -->
-<form hx-post="/jobs/search" hx-target="#job-list" hx-swap="afterbegin"
-      style="margin-bottom:1rem; padding-bottom:0.75rem; border-bottom:1px solid var(--pico-muted-border-color, #ccc)">
-  <input name="url" type="url"
-         placeholder="Paste a JobStreet listing/search URL (batch import)…"
-         pattern="https://id\.jobstreet\.com/.*"
-         title="Batch import from id.jobstreet.com listing pages"
-         required>
-  <button type="submit">Search &amp; Import</button>
-</form>
-
-<form hx-post="/jobs" hx-target="#job-list" hx-swap="afterbegin">
-  <input name="url" type="url"
-         placeholder="Paste an id.jobstreet.com job URL…"
-         pattern="https://id\.jobstreet\.com/.*"
-         title="Phase 1 supports id.jobstreet.com URLs only"
-         required>
-  <button type="submit">Process</button>
-</form>
-<div id="job-list">
-  {% for job in jobs %}
-  <article id="job-{{ job.id }}">
-    <strong>{{ job.title }}</strong>
-    <small> — {{ job.status }}</small>
-    {% if job.status == "pending_approval" || job.status == "approved" || job.status == "rejected" %}
-    <a href="/jobs/{{ job.id }}" role="button" class="outline" style="float:right">Review CV →</a>
-    {% endif %}
-  </article>
-  {% endfor %}
+<style>
+  main.container { max-width:100%; padding:0; margin:0; display:flex; flex-direction:column; height:100vh }
+  nav { padding:.4rem 1rem; flex-shrink:0; border-bottom:1px solid var(--border-subtle) }
+  #dashboard { flex:1; overflow:auto; padding:0.5rem }
+</style>
+<div id="dashboard">
+  <div style="display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; padding:.4rem .6rem">
+    <div id="crawl-status" style="flex:1">{{ crawl_html|safe }}</div>
+    <button hx-post="/scheduler/run"
+            hx-target="#crawl-status"
+            hx-swap="innerHTML"
+            class="outline"
+            style="font-size:.8rem; padding:.2rem .6rem">Run now</button>
+  </div>
+  <div style="display:grid; grid-template-columns:1fr; gap:1rem; margin-bottom:1rem">
+    <form hx-post="/jobs" hx-target="#job-list" hx-swap="afterbegin">
+      <label for="job-url" style="font-size:.85rem">Single job URL</label>
+      <div style="display:flex; gap:.4rem">
+        <input id="job-url" name="url" type="url"
+               placeholder="https://id.jobstreet.com/id/job/…"
+               pattern="https://id\.jobstreet\.com/.*" required style="flex:1; min-width:0; margin:0">
+        <button type="submit" style="margin:0">Process</button>
+      </div>
+    </form>
+  </div>
+  <div id="job-list">
+  {% include "fragments/job_list.html" %}
+  </div>
 </div>
 {% endblock %}

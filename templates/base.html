@@ -1,11 +1,75 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Job Agent{% endblock %}</title>
   <link rel="stylesheet"
         href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <style>
+    :root {
+      --ctp-rosewater:  #dc8a78; --ctp-flamingo:  #dd7878; --ctp-pink:      #ea76cb;
+      --ctp-mauve:      #8839ef; --ctp-red:       #d20f39; --ctp-maroon:    #e64553;
+      --ctp-peach:      #fe640b; --ctp-yellow:    #df8e1d; --ctp-green:     #40a02b;
+      --ctp-teal:       #179299; --ctp-sky:       #04a5e5; --ctp-sapphire:  #209fb5;
+      --ctp-blue:       #1e66f5; --ctp-lavender:  #7287fd; --ctp-text:      #4c4f69;
+      --ctp-subtext1:   #5c5f77; --ctp-subtext0:  #6c6f85; --ctp-overlay2:  #7c7f93;
+      --ctp-overlay1:   #8c8fa1; --ctp-overlay0:  #9ca0b0; --ctp-surface2:  #acb0be;
+      --ctp-surface1:   #bcc0cc; --ctp-surface0:  #ccd0da; --ctp-base:      #eff1f5;
+      --ctp-mantle:     #e6e9ef; --ctp-crust:     #dce0e8;
+    }
+    :root {
+      --text-primary:    var(--ctp-text);
+      --text-secondary:  var(--ctp-subtext0);
+      --accent:          var(--ctp-blue);
+      --accent-text:     var(--ctp-base);
+      --accent-hover:    var(--ctp-lavender);
+      --accent-focus:    color-mix(in srgb, var(--ctp-blue) 25%, transparent);
+      --surface-alt:     var(--ctp-mantle);
+      --border-subtle:   var(--ctp-surface0);
+      --bg-surface:      var(--ctp-base);
+      --status-ok:       var(--ctp-green);
+      --status-err:      var(--ctp-red);
+      --status-ok-text:  var(--ctp-base);
+      --status-err-text: var(--ctp-base);
+    }
+    html {
+      --pico-primary:            #1e66f5;
+      --pico-primary-hover:      #7287fd;
+      --pico-primary-inverse:    #eff1f5;
+      --pico-primary-focus:      color-mix(in srgb, #1e66f5 25%, transparent);
+      --pico-background-color:   #eff1f5;
+      --pico-color:              #4c4f69;
+      --pico-muted-color:        #6c6f85;
+      --pico-card-background-color: #e6e9ef;
+      --pico-muted-border-color: #ccd0da;
+    }
+    body { background: var(--ctp-base); color: var(--ctp-text); }
+    button, [role="button"], input[type="submit"], input, select, textarea, article {
+      border-radius: 0 !important;
+    }
+    button, [role="button"], input[type="submit"] {
+      padding: 0.25rem 0.6rem !important; font-size: 0.85rem !important;
+      line-height: 1.3 !important;
+      width: auto !important; min-height: 0 !important; height: auto !important;
+    }
+    input:not([type="submit"]):not([type="checkbox"]):not([type="radio"]),
+    select, textarea {
+      padding: 0.3rem 0.5rem !important; font-size: 0.85rem !important;
+      line-height: 1.3 !important; min-height: 0 !important; height: auto !important;
+    }
+    input[type="checkbox"], input[type="radio"] {
+      width: 1em !important; height: 1em !important;
+      min-width: 1em !important; min-height: 1em !important;
+      flex-shrink: 0 !important;
+    }
+    nav { padding: 0.2rem 0.8rem !important; }
+    article { margin-bottom: 0.5rem !important; }
+    :root {
+      --pico-block-spacing-vertical: 0.5rem;
+      --pico-spacing: 0.5rem;
+    }
+  </style>
   <script src="https://cdn.jsdelivr.net/npm/htmx.org@2/dist/htmx.min.js"></script>
 </head>
 <body>
@@ -14,10 +78,47 @@
       <ul><li><strong>Job Agent</strong></li></ul>
       <ul>
         <li><a href="/">Jobs</a></li>
+        <li><a href="/profile">Profile</a></li>
         <li><a href="/settings">Settings</a></li>
       </ul>
     </nav>
     {% block content %}{% endblock %}
   </main>
+  <script>
+    // SSE client — replaces 2s polling for live status updates.
+    (function() {
+      const source = new EventSource('/events');
+      const pending = {};
+      source.onmessage = function(e) {
+        try {
+          const msg = JSON.parse(e.data);
+          const el = document.getElementById('job-' + msg.id);
+          if (el) {
+            fetch('/jobs/' + msg.id + '/card')
+              .then(r => r.text())
+              .then(html => { el.outerHTML = html; });
+          } else {
+            // Element not in DOM yet (HTMX response pending) — retry when it appears.
+            pending[msg.id] = msg;
+          }
+        } catch(err) {}
+      };
+      // Flush pending updates after HTMX settles (e.g. after form submit).
+      document.body.addEventListener('htmx:afterSwap', function() {
+        for (const id in pending) {
+          const el = document.getElementById('job-' + id);
+          if (el) {
+            fetch('/jobs/' + id + '/card')
+              .then(r => r.text())
+              .then(html => { el.outerHTML = html; });
+            delete pending[id];
+          }
+        }
+      });
+      source.onerror = function() {
+        // Browser auto-reconnects on error — no action needed.
+      };
+    })();
+  </script>
 </body>
 </html>

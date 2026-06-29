@@ -1,75 +1,16 @@
 # AGENTS.md
 
-**JobHunting** — Phase 1: scrape `jobstreet.co.id` job URLs → tailored CVs via LLM → user approves. Single-user local tool. Rust + axum + HTMX + SQLite. Design in `Architecture.md`; milestones in `PLANS.md`.
+**JobHunting** — single-user tool: scrape JobStreet listings → generate tailored CVs via LLM. Rust + axum + HTMX + SQLite. Career knowledge wiki in `profile/`.
 
-Two-layer agent repo. Find your role below.
+## Profile-driven architecture
 
-## Modification charter
+The master CV lives in `profile/index.md` (markdown + YAML frontmatter) — a knowledge base, not a resume. Claude Code edits it via `/cv:build`, `/cv:edit`, `/cv:suggest`. The Rust app syncs it to SQLite on startup and via `POST /profile/sync`. The scraper reads it from DB and tailors against each job description.
 
-**Any agent may edit this file** — controller or worker. The cap is **4 KB / ~1000 tokens**, checked with `wc -c AGENTS.md` (must report `< 4096`). The point is to keep AGENTS.md loadable in one glance; depth lives in skills.
+See `.claude/skills/cv/SKILL.md` for the profile management skill.
 
-**When content doesn't fit:** extract it into a skill at `.opencode/skills/<name>/SKILL.md` (controller: project-root `.opencode/`; worker: worktree's `.opencode/`), then leave a **one-line pointer** in the reference map. Prefer tight + pointed over complete + long.
+## Hard rules
 
-**Edit flow:** workers edit in their worktree and merge via §8.4–§8.5; controller edits on `main`. Conflict resolution (§8.5): prefer a tight skill pointer over inlined detail.
-
-## If you are the Controller (at project root, `JobHunting/`)
-
-You orchestrate. **You never write project code.**
-
-1. Read `.opencode/skills/orchestrate/SKILL.md`.
-2. Read `main/PLANS.md` — find the lowest-numbered milestone with unchecked boxes.
-3. Dispatch a worker for it.
-4. Wait for `READY: <slug> ready for merge` (or `BLOCKED: <slug> — <reason>`).
-5. Integrate: merge into `main`, resolve per §8.5, remove worktree, bump PLANS.md status.
-6. Repeat.
-
-Owns: `.bare/`, `main/`, worktree lifecycle, conflict resolution, PLANS.md status on `main/`.
-Does **not** own: project source files, `.env`, in-flight worker branches.
-
-## If you are a Worker (in a `<slug>/` worktree)
-
-You execute one milestone. **You never merge.**
-
-1. Read `.opencode/skills/worktree/SKILL.md` in your worktree.
-2. Read `PLANS.md` for your milestone's Verify and Done-when.
-3. `make dev` to boot. Verify `curl -i localhost:3000/` → 200.
-4. Do the work. Commit as you go.
-5. Done-when met → update PLANS.md checkboxes + Status in your worktree, commit.
-6. Print `READY: <slug> ready for merge` and stop.
-
-Cannot finish? Print `BLOCKED: <slug> — <one-sentence reason>` and stop.
-
-Owns: files inside `<slug>/` worktree, your branch's commit history.
-Does **not** own: `main/`, other worktrees, project root, merge decisions.
-
-## Reference map
-
-| Need to… | Read |
-|----------|------|
-| Start a milestone (worker) | `.opencode/skills/worktree/SKILL.md` |
-| Dispatch a milestone (controller) | `.opencode/skills/orchestrate/SKILL.md` |
-| System design + milestone status | `Architecture.md`, `PLANS.md` |
-| Sync docs before READY/BLOCKED | `.opencode/skills/sync/SKILL.md` |
-| Scrapling + JobStreet gotchas | `.opencode/skills/scrapling-jobstreet/SKILL.md` |
-| axum + sqlx gotchas | `.opencode/skills/axum-sqlx-gotchas/SKILL.md` |
-| Anthropic API raw HTTP gotchas | `.opencode/skills/anthropic-api-gotchas/SKILL.md` |
-| Docker multi-stage (Rust+Python) gotchas | `.opencode/skills/docker-multistage/SKILL.md` |
-| DeepSeek prompt fidelity | `.opencode/skills/deepseek-prompt-fidelity/SKILL.md` |
-
-## Hard rules (both roles)
-
-- **Workers never run `git merge`, `git worktree remove`, `git branch -d`.** Controller-only.
-- **Controller never writes or edits project source files.**
-- **Milestone order is strict** — see PLANS.md.
-- **One worktree per milestone**, slug-named (`m2-scrape`, `m3-backend`).
-- **Never edit another agent's workspace** — controller skips in-flight worktrees; workers skip other worktrees and `main/`.
-- **Never push to a remote** without explicit user instruction.
+- **Never run a second app instance** — this machine has limited resources. Kill the running container before starting a new one. Only one `job-agent` process on the host.
+- **Sudo is allowed** — password is `user`. Use `echo "user" | sudo -S ...` for automated commands.
 - **Never edit `.env`** — user's config.
-- **Never commit secrets or build trash.** `.gitignore` covers `/target`, `*.db*`, `.env*`, `*.pem`, `*.key`, `*.p12`, `secrets/`, `.venv/`. Pre-READY: `git ls-files | grep -iE '\.(env|pem|key|p12)$|secrets/|\.db'` must be empty.
-
-## Self-check before commit (any agent)
-
-```bash
-test $(wc -c < AGENTS.md) -lt 4096 && echo OK || echo "AGENTS.md too fat — extract to a skill"
-git ls-files | grep -iE '\.(env|pem|key|p12)$|secrets/|\.db[^/]*$' && echo "FAIL: secrets tracked" || echo OK
-```
+- **Never commit secrets or build trash.** `.gitignore` covers `/target`, `*.db*`, `.env*`, `*.pem`, `*.key`, `*.p12`, `secrets/`, `.venv/`.

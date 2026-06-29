@@ -1,0 +1,13 @@
+[Unit]
+Description=JobHunting scheduler: trigger at 6am and 6pm
+Requires=jobhunting-scheduler.service
+
+[Timer]
+OnCalendar=*-*-* 06,18:00:00
+# Randomize up to 10 minutes to avoid predictable load patterns
+RandomizedDelaySec=600
+# If the host was off during a scheduled time, fire once on boot
+Persistent=true
+
+[Install]
+WantedBy=timers.target

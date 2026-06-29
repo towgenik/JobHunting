@@ -1,7 +1,6 @@
-<article id="job-{{ id }}"
-         hx-get="/jobs/{{ id }}/card"
-         hx-trigger="every 2s"
-         hx-swap="outerHTML"
-         aria-busy="true">
-  Processing {{ url }}…
+<article id="job-{{ id }}" aria-busy="true">
+  {{ url }}
+  {% if !progress.is_empty() %}
+  <div style="font-size:.8rem; color:var(--text-secondary); margin-top:.3rem">{{ progress }}</div>
+  {% endif %}
 </article>

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400" font-family="monospace">
+  <rect width="800" height="400" fill="#1a1a2e"/>
+  <!-- Terminal header -->
+  <rect width="800" height="28" fill="#16213e"/>
+  <text x="12" y="19" fill="#7f8c8d" font-size="11">● ● ●  api-gateway — requests</text>
+  <!-- Log lines -->
+  <text x="16" y="55" fill="#00ff88" font-size="11">[2026-06-22 14:31:02] GET /api/v1/users → 200 OK 3.2ms</text>
+  <text x="16" y="75" fill="#00ff88" font-size="11">[2026-06-22 14:31:02] GET /api/v1/orders → 200 OK 2.8ms</text>
+  <text x="16" y="95" fill="#00ff88" font-size="11">[2026-06-22 14:31:03] POST /api/v1/auth/login → 201 Created 12.1ms</text>
+  <text x="16" y="115" fill="#ffdd57" font-size="11">[2026-06-22 14:31:03] GET /api/v1/metrics → 200 OK 1.1ms</text>
+  <text x="16" y="135" fill="#00ff88" font-size="11">[2026-06-22 14:31:04] GET /api/v1/search?q=backend → 200 OK 45.3ms</text>
+  <text x="16" y="165" fill="#7f8c8d" font-size="11">────────────────────────────────────────────</text>
+  <text x="16" y="190" fill="#7f8c8d" font-size="11">Connections: 10,247 active | p50: 2.1ms | p99: 4.8ms</text>
+  <text x="16" y="210" fill="#7f8c8d" font-size="11">Throughput: 8,432 req/s | Uptime: 47d 3h 12m</text>
+  <!-- Chart bars -->
+  <text x="16" y="255" fill="#7f8c8d" font-size="10">Latency distribution (last 5min)</text>
+  <rect x="16" y="265" width="24" height="30" fill="#00ff88" opacity="0.8"/><text x="20" y="308" fill="#7f8c8d" font-size="9">0.5</text>
+  <rect x="46" y="260" width="24" height="35" fill="#00ff88" opacity="0.8"/><text x="50" y="308" fill="#7f8c8d" font-size="9">1.0</text>
+  <rect x="76" y="252" width="24" height="43" fill="#ffdd57" opacity="0.8"/><text x="80" y="308" fill="#7f8c8d" font-size="9">2.0</text>
+  <rect x="106" y="245" width="24" height="50" fill="#ffdd57" opacity="0.8"/><text x="110" y="308" fill="#7f8c8d" font-size="9">5.0</text>
+  <rect x="136" y="240" width="24" height="55" fill="#ff6b6b" opacity="0.6"/><text x="140" y="308" fill="#7f8c8d" font-size="9">10+</text>
+</svg>

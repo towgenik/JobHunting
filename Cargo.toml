@@ -4,8 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-axum        = { version = "0.7", features = ["macros", "form"] }
+axum        = { version = "0.7", features = ["macros", "form", "http2"] }
 tokio       = { version = "1",   features = ["full"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
 sqlx        = { version = "0.7", features = ["runtime-tokio", "sqlite", "uuid", "migrate"] }
 # ponytail: default-features=false drops native-tls (openssl). rustls-tls is
 # pure-Rust TLS — no system openssl — and pairs with the alpine/musl builder in
@@ -17,3 +18,7 @@ uuid        = { version = "1",   features = ["v4", "serde"] }
 anyhow      = "1"
 askama      = "0.12"
 askama_axum = "0.4"
+# ponytail: already in the dep tree via url/sqlx. Used to parse repeated form
+# keys into a Vec — serde_urlencoded (axum::Form) is flat-only and rejects
+# ids=A&ids=B for Vec<T> with a 422.
+form_urlencoded = "1"

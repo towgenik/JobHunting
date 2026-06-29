@@ -903,11 +903,13 @@ dependencies = [
  "askama",
  "askama_axum",
  "axum",
+ "form_urlencoded",
  "reqwest",
  "serde",
  "serde_json",
  "sqlx",
  "tokio",
+ "tokio-stream",
  "uuid",
 ]
 
@@ -2079,6 +2081,7 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]

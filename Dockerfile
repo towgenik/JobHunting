@@ -1,7 +1,7 @@
 # Multi-stage Dockerfile for the JobHunting app service (Architecture §9.1, M8).
 #
 # Stage 1 (builder): compile the Rust binary (with sqlx migrations embedded).
-# Stage 2 (runtime): Debian bookworm with Python + scrapling[all] + Chromium.
+# Stage 2 (runtime): Debian bookworm with Python + playwright (CDP client only).
 #   The binary and Python scripts are copied in; both run from /app.
 #
 # Build context: repo root (docker build .)
@@ -55,10 +55,15 @@ FROM debian:bookworm AS runtime
 # Avoid interactive prompts from apt/tzdata during build.
 ENV DEBIAN_FRONTEND=noninteractive
 
-# System packages: Python 3, pip, and the libs Playwright Chromium needs.
-# We install Python first, then scrapling[all] which pulls in playwright, then
-# `playwright install chromium` which downloads Playwright's Chromium binary.
-# Playwright Chromium runtime deps: libnss3 through fonts-liberation.
+# ponytail: Chromium apt deps + scrapling[all] + playwright binary removed.
+# scrape_api.py and index_api.py are pure HTTP (stdlib only). session.py uses
+# playwright's connect_over_cdp (WebSocket to existing Chrome, no browser launch,
+# no system libs needed). If anti-bot bites, re-add:
+#   apt: libnss3 libnspr4 libdbus-1-3 libatk1.0-0 libatk-bridge2.0-0 libcups2
+#        libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2
+#        libgbm1 libasound2 libpango-1.0-0 libcairo2 libxshmfence1 fonts-liberation
+#   pip: "scrapling[all]==0.4.9"
+#   bin: python3 -m playwright install chromium
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         python3 \
@@ -66,39 +71,11 @@ RUN apt-get update && \
         python3-venv \
         ca-certificates \
         curl \
-        libnss3 \
-        libnspr4 \
-        libdbus-1-3 \
-        libatk1.0-0 \
-        libatk-bridge2.0-0 \
-        libcups2 \
-        libdrm2 \
-        libxkbcommon0 \
-        libxcomposite1 \
-        libxdamage1 \
-        libxfixes3 \
-        libxrandr2 \
-        libgbm1 \
-        libasound2 \
-        libpango-1.0-0 \
-        libcairo2 \
-        libxshmfence1 \
-        fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
-# Install scrapling with all extras; this pulls in playwright.
-# Pin to avoid surprise breakage — bump intentionally when upgrading.
-# 0.4.9 is the version verified working for this project (see scrapling-jobstreet skill).
 # --break-system-packages: bookworm's pip enforces PEP 668 (externally-managed
 # env). This is a single-user container with one Python consumer — fine.
-RUN pip3 install --no-cache-dir --break-system-packages "scrapling[all]==0.4.9"
-
-# Install Playwright's Chromium browser binary (the one scrapling's DynamicFetcher uses).
-# We use `playwright install chromium` directly instead of `scrapling install` because:
-# - system deps are already installed above via apt
-# - `scrapling install` calls `playwright install-deps` which re-runs apt (redundant)
-# - `playwright install chromium` is the direct equivalent and more explicit
-RUN python3 -m playwright install chromium
+RUN pip3 install --no-cache-dir --break-system-packages playwright
 
 # Create the app working directory.
 WORKDIR /app
@@ -110,8 +87,8 @@ WORKDIR /app
 # be copied to the runtime image.
 COPY --from=builder /build/target/release/job-agent /app/job-agent
 
-# Copy Python scripts the binary shells out to at runtime (scrape.py, crawl_listing.py).
-COPY scrape.py session.py crawl_listing.py ./
+# Copy Python scripts the binary shells out to at runtime.
+COPY scrape_api.py index_api.py session.py ./
 
 # Expose the web UI port.
 EXPOSE 3000

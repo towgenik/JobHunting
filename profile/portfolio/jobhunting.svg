@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400" font-family="system-ui,sans-serif">
+  <rect width="800" height="400" fill="#f8f9fa"/>
+  <!-- Browser chrome -->
+  <rect width="800" height="36" fill="#e9ecef" rx="4"/>
+  <circle cx="16" cy="18" r="5" fill="#ff6b6b"/>
+  <circle cx="32" cy="18" r="5" fill="#ffdd57"/>
+  <circle cx="48" cy="18" r="5" fill="#51cf66"/>
+  <rect x="65" y="10" width="400" height="16" fill="#dee2e6" rx="8"/>
+  <text x="75" y="22" fill="#868e96" font-size="10">localhost:3000</text>
+  <!-- Dashboard content -->
+  <text x="24" y="70" fill="#212529" font-size="16" font-weight="bold">Jobs</text>
+  <rect x="24" y="85" width="752" height="42" fill="#fff" rx="4" stroke="#dee2e6"/>
+  <text x="36" y="105" fill="#212529" font-size="12">Backend Engineer — Gojek</text>
+  <text x="36" y="120" fill="#868e96" font-size="10">id.jobstreet.com • scraped 2min ago</text>
+  <rect x="700" y="93" width="64" height="24" fill="#d3f9d8" rx="4"/>
+  <text x="706" y="110" fill="#2b8a3e" font-size="10" font-weight="bold">Ready</text>
+
+  <rect x="24" y="135" width="752" height="42" fill="#fff" rx="4" stroke="#dee2e6"/>
+  <text x="36" y="155" fill="#212529" font-size="12">Platform Engineer — Traveloka</text>
+  <text x="36" y="170" fill="#868e96" font-size="10">id.jobstreet.com • generating CV...</text>
+  <rect x="700" y="143" width="64" height="24" fill="#fff3bf" rx="4"/>
+  <text x="704" y="160" fill="#e67700" font-size="10" font-weight="bold">Gen…</text>
+
+  <rect x="24" y="185" width="752" height="42" fill="#fff" rx="4" stroke="#dee2e6"/>
+  <text x="36" y="205" fill="#212529" font-size="12">Backend Developer — Tokopedia</text>
+  <text x="36" y="220" fill="#868e96" font-size="10">id.jobstreet.com • approved</text>
+  <rect x="700" y="193" width="64" height="24" fill="#d3f9d8" rx="4"/>
+  <text x="698" y="210" fill="#2b8a3e" font-size="10" font-weight="bold">Approved</text>
+
+  <text x="24" y="270" fill="#212529" font-size="16" font-weight="bold">Profile</text>
+  <rect x="24" y="285" width="752" height="90" fill="#fff" rx="4" stroke="#dee2e6"/>
+  <text x="36" y="305" fill="#212529" font-size="12" font-weight="bold">Farrel Ilham Shaputra</text>
+  <text x="36" y="322" fill="#495057" font-size="11">Software Engineer — Backend &amp; Infrastructure</text>
+  <text x="36" y="342" fill="#868e96" font-size="10">Skills: Rust, Python, Docker, Linux, SQL, Axum, Tokio</text>
+  <text x="36" y="358" fill="#868e96" font-size="10">Target: Backend Engineer, Platform Engineer</text>
+</svg>
