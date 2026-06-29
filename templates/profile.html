@@ -97,6 +97,15 @@
     ul { margin:0 0 .6em 1.2em; list-style:square }
     li { margin-bottom:.15em }
     strong { color:#111 }
+    pre { white-space:pre-wrap; word-wrap:break-word; overflow-x:auto; font-family:'Courier New',Consolas,monospace; font-size:10pt; background:#f5f5f5; padding:.6em; margin:.6em 0; border-radius:2px }
+    code { font-family:'Courier New',Consolas,monospace; font-size:10pt; background:#f5f5f5; padding:0 .2em }
+    pre > code { background:none; padding:0 }
+    table { border-collapse:collapse; width:100%; margin:.5em 0 }
+    th, td { border:1px solid #ccc; padding:.3em .5em; text-align:left }
+    blockquote { border-left:3px solid #ccc; padding-left:1em; margin:.5em 0; color:#555 }
+    hr { border:none; border-top:1px solid #ddd; margin:1em 0 }
+    a { color:#1565c0 }
+    img { max-width:100% }
   `;
 
   let editor = document.getElementById('editor');
@@ -111,7 +120,7 @@
       const wrap = document.getElementById('preview-wrap');
       const scale = Math.min(1, (wrap.parentElement.clientWidth - 24) / 794);
       frame.style.transform = `scale(${scale})`;
-      frame.style.height = (h * scale + 2) + 'px';
+      frame.style.height = (h / scale + 2) + 'px';
     };
     renderPreview();
   }
@@ -227,6 +236,7 @@
     syncScroll();
     // Reset lastSavedValue for new file
     lastSavedValue = (editor || {}).value || '';
+    lastPostedValue = null;
     // Update sidebar selected class
     const fileField = document.getElementById('file-field');
     const currentFile = fileField ? fileField.value : '';
@@ -251,8 +261,9 @@
     setTimeout(showPageCount, 100);
   });
 
-  // ponytail: saving flag — suppresses self-triggered SSE events from our own save
-  let saving = false;
+  // ponytail: track the value we sent to the server — if SSE returns the same
+  // content, it's our own write triggering the file watcher (1s debounce > save latency)
+  let lastPostedValue = null;
 
   function saveProfile() {
     const ed = document.getElementById('editor');
@@ -260,7 +271,7 @@
     const formData = new URLSearchParams();
     formData.append('content', ed.value);
     formData.append('file', fileField.value);
-    saving = true;
+    lastPostedValue = ed.value;
     fetch('/profile', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:formData })
       .then(r => r.text())
       .then(t => {
@@ -271,8 +282,7 @@
           // Broadcast to other tabs
           profileChannel.postMessage({file: fileField.value, value: ed.value});
         }
-      })
-      .finally(() => { saving = false; });
+      });
   }
 
   // ─── Live sync: lastSavedValue, BroadcastChannel, SSE, toast ─────────
@@ -318,7 +328,6 @@
   (function() {
     const src = new EventSource('/events');
     src.addEventListener('profile-changed', function(ev) {
-      if (saving) return; // ignore our own save triggering the watcher
       let d;
       try { d = JSON.parse(ev.data); } catch { return; }
       const fileField = document.getElementById('file-field');
@@ -331,7 +340,12 @@
           const m = html.match(/<textarea[^>]*>([\s\S]*?)<\/textarea>/);
           if (!m) return;
           const serverContent = m[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&quot;/g, '"');
-          if (serverContent === lastSavedValue) return; // no actual change
+          if (serverContent === lastPostedValue) {
+            // Our own write caught up to us — silent sync, no toast
+            lastSavedValue = serverContent;
+            return;
+          }
+          if (serverContent === lastSavedValue) return; // no actual change from last committed state
           const ed = document.getElementById('editor');
           if (!ed) return;
           if (ed.value === lastSavedValue) {
