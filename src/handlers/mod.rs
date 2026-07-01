@@ -8,6 +8,7 @@ pub mod profile;
 pub mod profile_print;
 pub mod settings;
 pub mod wiki;
+pub mod workshop;
 
 /// Drop guard for AtomicBool — releases on panic.
 pub struct BoolGuard(pub(crate) std::sync::Arc<std::sync::atomic::AtomicBool>);

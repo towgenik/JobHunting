@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  main.container { max-width:100%; padding:0; margin:0; display:flex; flex-direction:column; height:100vh }
+  nav { padding:.4rem 1rem; flex-shrink:0; border-bottom:1px solid var(--border-subtle) }
+  #workshop { flex:1; overflow:auto; padding:0.5rem }
+</style>
+<div id="workshop">
+  <div style="max-width:960px; margin:0 auto">
+    <div style="display:flex; align-items:baseline; gap:.6rem; margin-bottom:.6rem">
+      <h1 style="font-size:1.1rem; margin:0">Workshop</h1>
+      <span style="font-size:.8rem; color:var(--text-secondary)">Paste a job description → full pipeline runs → results appear below</span>
+    </div>
+
+    <form hx-post="/jobs/manual" hx-target="#workshop-results" hx-swap="afterbegin">
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:.4rem">
+        <label style="font-size:.82rem">
+          Title *
+          <input name="title" required placeholder="Senior Backend Engineer"
+                 style="margin:0">
+        </label>
+        <label style="font-size:.82rem">
+          Company
+          <input name="company" placeholder="ACME Corp"
+                 style="margin:0">
+        </label>
+        <label style="font-size:.82rem">
+          Source URL
+          <input name="source_url" type="url" placeholder="https://..."
+                 style="margin:0">
+        </label>
+      </div>
+      <label style="font-size:.82rem">
+        Job Description *
+        <textarea name="description" required rows="14"
+                  placeholder="Paste the full job description here..."
+                  style="margin:0; min-height:200px"></textarea>
+      </label>
+      <button type="submit" style="margin-top:.3rem">Process Description</button>
+    </form>
+
+    <hr style="margin:.8rem 0">
+
+    <div id="workshop-results">
+    {% include "fragments/workshop_list.html" %}
+    </div>
+  </div>
+</div>
+<script>
+(function() {
+  let timer = null;
+  function setup() {
+    const src = window.__sse;
+    if (!src) { setTimeout(setup, 100); return; }
+    src.addEventListener('job-update', () => {
+      if (timer) return;
+      timer = setTimeout(() => {
+        timer = null;
+        fetch('/workshop/list')
+          .then(r => r.text())
+          .then(html => {
+            const el = document.getElementById('workshop-results');
+            if (el) el.innerHTML = html;
+          });
+      }, 200);
+    });
+  }
+  setup();
+})();
+</script>
+{% endblock %}

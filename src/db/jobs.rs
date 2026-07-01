@@ -433,3 +433,79 @@ pub struct SchedulerRunRow {
     pub jobs_found:    i64,
     pub jobs_filtered: i64,
 }
+
+// ---------------------------------------------------------------------------
+// Workshop / manual job helpers
+// ---------------------------------------------------------------------------
+
+/// Create a manual job stub with title, company, and description pre-filled.
+/// Uses a synthetic URL (`"manual: {title}"`) so it won't collide with scraped jobs.
+pub async fn create_manual_job_stub(
+    pool: &SqlitePool,
+    title: &str,
+    company: &str,
+    description: &str,
+    _source_url: &str,
+) -> Result<Uuid> {
+    let id = Uuid::new_v4();
+    let id_str = id.to_string();
+    let url = format!("manual:{id_str}");
+    sqlx::query(
+        "INSERT INTO jobs (id, url, title, description, company, status, created_at)
+         VALUES (?, ?, ?, ?, ?, 'new', datetime('now'))"
+    )
+    .bind(&id_str)
+    .bind(&url)
+    .bind(title)
+    .bind(description)
+    .bind(company)
+    .execute(pool)
+    .await?;
+    Ok(id)
+}
+
+/// A workshop job row includes parsed pipeline outputs for inline rendering.
+pub struct WorkshopJobRow {
+    pub id:                  Uuid,
+    pub url:                 String,
+    pub title:               String,
+    pub company:             String,
+    pub status:              String,
+    pub progress:            String,
+    pub review_score:        Option<i64>,
+    pub review_feedback:     Option<String>,
+    pub verification:        Option<String>,
+    pub rank:                Option<String>,
+}
+
+/// List manual jobs (url LIKE 'manual:%') for the workshop page.
+pub async fn list_workshop_jobs(pool: &SqlitePool) -> Result<Vec<WorkshopJobRow>> {
+    use sqlx::Row;
+    let rows = sqlx::query(
+        "SELECT id, url, title, company, status, progress,
+                review_score, review_feedback, verification, rank
+         FROM jobs
+         WHERE url LIKE 'manual:%'
+         ORDER BY rowid DESC"
+    )
+    .fetch_all(pool)
+    .await?;
+    rows.into_iter()
+        .map(|r| {
+            let id_str: String = r.try_get("id")?;
+            let id = Uuid::parse_str(&id_str).map_err(|e| anyhow::anyhow!(e))?;
+            Ok(WorkshopJobRow {
+                id,
+                url:             r.try_get::<Option<String>, _>("url")?.unwrap_or_default(),
+                title:           r.try_get::<Option<String>, _>("title")?.unwrap_or_default(),
+                company:         r.try_get::<Option<String>, _>("company")?.unwrap_or_default(),
+                status:          r.try_get("status")?,
+                progress:        r.try_get::<Option<String>, _>("progress")?.unwrap_or_default(),
+                review_score:    r.try_get("review_score")?,
+                review_feedback: r.try_get("review_feedback")?,
+                verification:    r.try_get("verification")?,
+                rank:            r.try_get("rank")?,
+            })
+        })
+        .collect()
+}

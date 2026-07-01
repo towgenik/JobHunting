@@ -1,0 +1,7 @@
+<article id="workshop-job-{{ id }}" aria-busy="true">
+  <strong>{{ title }}</strong>
+  {% if !company.is_empty() %}<span style="color:var(--text-secondary)"> · {{ company }}</span>{% endif %}
+  {% if !progress.is_empty() %}
+  <div style="font-size:.8rem; color:var(--text-secondary); margin-top:.3rem">{{ progress }}</div>
+  {% endif %}
+</article>

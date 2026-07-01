@@ -31,6 +31,25 @@ pub struct JobTemplate {
     #[allow(dead_code)]
     pub cv:              CvContent,
     pub status:          String,
+    pub progress:        String,
+    pub review:          Option<ReviewSummary>,
+    pub verification:    Option<Verification>,
+    pub rank:            Option<RankSummary>,
+    pub review_notes:    String,
+}
+
+#[derive(Template)]
+#[template(path = "fragments/job_detail.html")]
+pub struct JobDetailFragment {
+    pub id:              Uuid,
+    pub title:           String,
+    pub url:             String,
+    pub company:         String,
+    pub description:     String,
+    #[allow(dead_code)]
+    pub cv:              CvContent,
+    pub status:          String,
+    pub progress:        String,
     pub review:          Option<ReviewSummary>,
     pub verification:    Option<Verification>,
     pub rank:            Option<RankSummary>,
@@ -191,5 +210,47 @@ pub struct CvPrintTemplate {
 #[template(path = "fragments/scheduler_runs.html")]
 pub struct SchedulerRunsTemplate {
     pub scheduler_runs: Vec<SchedulerRunRow>,
+}
+
+// ---------------------------------------------------------------------------
+// Workshop templates
+// ---------------------------------------------------------------------------
+
+#[derive(Template)]
+#[template(path = "workshop.html")]
+pub struct WorkshopTemplate {
+    pub jobs: Vec<WorkshopJob>,
+}
+
+#[derive(Template)]
+#[template(path = "fragments/workshop_list.html")]
+pub struct WorkshopListTemplate {
+    pub jobs: Vec<WorkshopJob>,
+}
+
+#[derive(Template)]
+#[template(path = "fragments/workshop_processing.html")]
+pub struct WorkshopProcessingCard {
+    pub id:       Uuid,
+    pub title:    String,
+    pub company:  String,
+    pub progress: String,
+}
+
+pub struct WorkshopJob {
+    pub id:                   Uuid,
+    pub url:                  String,
+    pub title:                String,
+    pub company:              String,
+    pub status:               String,
+    pub progress:             String,
+    pub review_score:         i64,
+    pub review_feedback:      String,
+    pub truth_pct:            i64,
+    #[allow(dead_code)]
+    pub fabrication_detected: bool,
+    pub approval_probability: i64,
+    pub improvements:         Vec<String>,
+    pub fabrication_items:    Vec<String>,
 }
 

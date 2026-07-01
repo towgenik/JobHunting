@@ -9,9 +9,10 @@ use askama::Template;
 use crate::{
     AppState, db, generate, events, profile,
     templates::{
-        CvPrintTemplate, IndexTemplate, JobRow, JobTemplate,
-        ProcessingTemplate, ReviewSummary, Verification, VerificationItem,
-        RankSummary, CrawlStatusTemplate, JobListTemplate, parse_cv_content,
+        CvPrintTemplate, IndexTemplate, JobRow, JobTemplate, JobDetailFragment,
+        ProcessingTemplate, WorkshopProcessingCard, ReviewSummary,
+        Verification, VerificationItem, RankSummary,
+        CrawlStatusTemplate, JobListTemplate, parse_cv_content,
     },
 };
 use super::forms::*;
@@ -160,11 +161,25 @@ pub async fn job_card(
     }
 }
 
-// GET /jobs/:id — CV review page
+// GET /jobs/:id — CV review page (full page with navbar)
 pub async fn job_detail(
     State(app): State<AppState>,
     Path(job_id): Path<Uuid>,
 ) -> Response {
+    render_job_detail(&app, job_id, false).await
+}
+
+// GET /jobs/:id/fragment — job detail fragment only (no navbar, for SSE/HTMX swaps)
+pub async fn job_detail_fragment(
+    State(app): State<AppState>,
+    Path(job_id): Path<Uuid>,
+) -> Response {
+    render_job_detail(&app, job_id, true).await
+}
+
+// Shared render logic for the job detail page. Used by job_detail,
+// job_detail_fragment, and regenerate_job.
+async fn render_job_detail(app: &AppState, job_id: Uuid, fragment: bool) -> Response {
     let rec = match db::get_job(&app.db, job_id).await {
         Ok(r) => r,
         Err(e) => {
@@ -215,20 +230,21 @@ pub async fn job_detail(
         })
     });
 
-    JobTemplate {
-        id: job_id,
-        title: rec.title,
-        url: rec.url,
-        company: rec.company,
-        description: rec.description,
-        cv,
-        status: rec.status,
-        review,
-        verification,
-        rank,
-        review_notes: rec.review_notes.unwrap_or_default(),
+    let review_notes = rec.review_notes.unwrap_or_default();
+
+    if fragment {
+        JobDetailFragment {
+            id: job_id, title: rec.title, url: rec.url, company: rec.company,
+            description: rec.description, cv, status: rec.status, progress: rec.progress,
+            review, verification, rank, review_notes,
+        }.into_response()
+    } else {
+        JobTemplate {
+            id: job_id, title: rec.title, url: rec.url, company: rec.company,
+            description: rec.description, cv, status: rec.status, progress: rec.progress,
+            review, verification, rank, review_notes,
+        }.into_response()
     }
-    .into_response()
 }
 
 // GET /jobs/:id/cv — print-optimized standalone CV page (browser print → PDF)
@@ -312,19 +328,80 @@ pub async fn regenerate_job(
     db::set_progress(&app.db, job_id, "Regenerating…").await.ok();
     events::publish_job_update(&app, job_id, "generating", "Regenerating…");
 
-    // Spawn background — don't block the request for 60-120s.
-    let feedback_owned = feedback.to_string();
+    if body.full_pipeline.as_deref() == Some("true") {
+        // Full pipeline re-run (pre-screen + writer + review loop + verifier + editor + ranker)
+        tokio::spawn({
+            let app = app.clone();
+            async move {
+                if let Err(e) = generate::process_manual_job(&app, job_id).await {
+                    eprintln!("regenerate full_pipeline {job_id} failed: {e}");
+                    let _ = db::set_status(&app.db, job_id, "failed").await;
+                }
+            }
+        });
+    } else {
+        // Simple regenerate (writer-only)
+        let feedback_owned = feedback.to_string();
+        tokio::spawn({
+            let app = app.clone();
+            async move {
+                if let Err(e) = generate::regenerate_cv(&app, job_id, &feedback_owned).await {
+                    eprintln!("regenerate {job_id} failed: {e}");
+                    let _ = db::set_status(&app.db, job_id, "failed").await;
+                }
+            }
+        });
+    }
+
+    // Re-render the job detail fragment with updated status/progress.
+    // The outer SSE div in job.html will auto-update on each pipeline stage.
+    render_job_detail(&app, job_id, true).await
+}
+
+// POST /jobs/manual — create a manual job (no scraping), spawn full pipeline.
+pub async fn submit_manual_job(
+    State(app): State<AppState>,
+    Form(body): Form<ManualJobForm>,
+) -> Response {
+    let title = body.title.trim().to_string();
+    let description = body.description.trim().to_string();
+    if title.is_empty() || description.is_empty() {
+        return Html(
+            "<article><span class=\"error\">Title and description are required.</span></article>"
+                .to_string(),
+        )
+        .into_response();
+    }
+    let company = body.company.unwrap_or_default();
+    let source_url = body.source_url.unwrap_or_default();
+
+    let job_id = match db::create_manual_job_stub(&app.db, &title, &company, &description, &source_url).await {
+        Ok(id) => id,
+        Err(e) => {
+            eprintln!("create_manual_job_stub failed: {e}");
+            return Html(format!(
+                "<article><span class=\"error\">Failed to create job: {e}</span></article>"
+            ))
+            .into_response();
+        }
+    };
+
     tokio::spawn({
         let app = app.clone();
         async move {
-            if let Err(e) = generate::regenerate_cv(&app, job_id, &feedback_owned).await {
-                eprintln!("regenerate {job_id} failed: {e}");
-                let _ = db::set_status(&app.db, job_id, "failed").await;
+            if let Err(e) = generate::process_manual_job(&app, job_id).await {
+                eprintln!("process_manual_job {job_id} failed: {e}");
+                let _ = db::delete_job(&app.db, job_id).await;
             }
         }
     });
 
-    let url = db::get_job_url(&app.db, job_id).await.unwrap_or_default();
-    ProcessingTemplate { id: job_id, url, progress: "Regenerating…".to_string() }.into_response()
+    WorkshopProcessingCard {
+        id: job_id,
+        title,
+        company,
+        progress: String::new(),
+    }
+    .into_response()
 }
 

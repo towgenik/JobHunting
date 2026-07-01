@@ -14,4 +14,4 @@ pub mod scraper;
 pub mod verifier;
 pub mod writer;
 
-pub use process::{process_job, regenerate_cv};
+pub use process::{process_job, process_manual_job, regenerate_cv};

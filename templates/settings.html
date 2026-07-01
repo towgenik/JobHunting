@@ -2,7 +2,9 @@
 {% block title %}Settings{% endblock %}
 {% block content %}
 <style>
-  main.container { max-width:100%; padding:0.5rem 1rem; margin:0 }
+  main.container { max-width:100%; padding:0; margin:0; display:flex; flex-direction:column; height:100vh }
+  nav { padding:.4rem 1rem; flex-shrink:0; border-bottom:1px solid var(--border-subtle) }
+  #settings-content { flex:1; overflow:auto; padding:0.5rem 1rem }
   section { margin-bottom:1.5rem }
   .form-row { display:flex; gap:.5rem; align-items:center; margin-bottom:.5rem }
   .form-row label { min-width:110px; font-size:.85rem }
@@ -13,6 +15,7 @@
   th, td { padding:.2rem .4rem }
   .status-msg { font-size:.82rem; min-height:1.2em }
 </style>
+<div id="settings-content">
 
 <span id="settings-status" class="status-msg">{{ status }}</span>
 
@@ -170,6 +173,7 @@
     {% include "fragments/scheduler_runs.html" %}
   </div>
 </section>
+</div>
 
 <script>
 function collectUnlockedFiles() {
@@ -191,9 +195,12 @@ function addUnlockedFile() {
   document.getElementById('unlocked-list').appendChild(div);
 }
 (function() {
-  const src = window.__sse;
-  if (!src) return;
-  src.addEventListener('scheduler-finished', () => htmx.ajax('GET', '/settings/scheduler-runs', {target: '#scheduler-runs', swap: 'innerHTML'}));
+  function setup() {
+    const src = window.__sse;
+    if (!src) { setTimeout(setup, 100); return; }
+    src.addEventListener('scheduler-finished', () => htmx.ajax('GET', '/settings/scheduler-runs', {target: '#scheduler-runs', swap: 'innerHTML'}));
+  }
+  setup();
 })();
 </script>
 {% endblock %}

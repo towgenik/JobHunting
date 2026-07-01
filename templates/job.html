@@ -1,147 +1,35 @@
 {% extends "base.html" %}
 {% block content %}
-<div hx-ext="sse" sse-connect="/events"
-     hx-get="/jobs/{{ id }}" hx-trigger="sse:job-update"
-     hx-target="#job-detail" hx-swap="innerHTML"
-     style="display:contents">
-<div id="job-detail">
 <style>
   main.container { max-width:100%; padding:0; margin:0; display:flex; flex-direction:column; height:100vh }
   nav { padding:.4rem 1rem; flex-shrink:0; border-bottom:1px solid var(--border-subtle) }
   #workspace { flex:1; display:flex; overflow:hidden }
 </style>
 
-<div id="workspace">
-  <section style="width:35%; min-width:350px; overflow:auto; padding:0.5rem; border-right:1px solid var(--border-subtle)">
-    <a href="/" style="font-size:.85rem; margin-right:1rem">← Back</a>
-    {% if status == "generated" %}
-    <a href="/jobs/{{ id }}/cv" target="_blank" role="button" class="outline" style="font-size:.8rem; padding:.2rem .5rem">📄 PDF</a>
-    {% endif %}
-
-    {% if !company.is_empty() %}
-    <h1 style="font-size:1.2rem; margin:.5rem 0 .1rem">{{ company }}</h1>
-    {% endif %}
-    <h2 style="font-size:1rem; margin:.2rem 0 .4rem; color:var(--text-secondary)">{{ title }}</h2>
-    <p style="font-size:.78rem; margin:.4rem 0"><a href="{{ url }}" target="_blank" style="word-break:break-all">{{ url }}</a></p>
-
-    {% if review_notes != "" %}
-    <p style="font-size:.82rem; color:var(--text-secondary); border-left:2px solid var(--accent); padding-left:.5rem; margin:.4rem 0">
-      <em>{{ review_notes }}</em>
-    </p>
-    {% endif %}
-
-    <h2 style="font-size:1rem; margin-top:.5rem">Job Description</h2>
-    <pre style="white-space:pre-wrap; font-size:.82rem; line-height:1.4">{{ description }}</pre>
-
-    {% if let Some(r) = review %}
-    <section style="margin-top:0.75rem; padding:.5rem; background:var(--surface-alt); border-radius:.4rem">
-      <h3 style="font-size:.9rem; margin-bottom:.3rem">HR Review</h3>
-      <p style="font-size:.82rem"><strong>Score:</strong> {{ r.score }}/100
-        {% if r.score >= 85 %}
-        <mark style="background:var(--status-ok); color:var(--status-ok-text)">pass</mark>
-        {% else %}
-        <mark style="background:var(--status-err); color:var(--status-err-text)">needs work</mark>
-        {% endif %}
-      </p>
-      <p style="font-size:.82rem; white-space:pre-wrap">{{ r.feedback }}</p>
-    </section>
-    {% endif %}
-
-    {% if let Some(v) = verification %}
-    <section style="margin-top:0.5rem; padding:.5rem; background:var(--surface-alt); border-radius:.4rem">
-      <h3 style="font-size:.9rem; margin-bottom:.3rem">Verification — {{ v.truth_pct }}% truth</h3>
-
-      {% if v.incomplete %}
-      <p style="color:var(--status-err); font-size:.8rem"><em>⚠ Incomplete — percentage may be unreliable.</em></p>
-      {% endif %}
-      {% if v.fabrication_detected %}
-      <p style="color:var(--status-err); font-size:.8rem"><em>⚠ Fabrication detected — editor fallback used.</em></p>
-      {% endif %}
-
-      <div style="display:flex; gap:.125rem; height:.75rem; border-radius:.2rem; overflow:hidden; margin-bottom:.4rem" aria-hidden="true">
-        {% for item in v.items %}
-        <div style="flex:1; background:{% if item.verdict == "truth" %}var(--status-ok){% else %}var(--status-err){% endif %}"
-             title="{{ item.field }} — {{ item.verdict }}"></div>
-        {% endfor %}
-      </div>
-
-      <ul style="list-style:none; padding:0; margin:0">
-        {% for item in v.items %}{% if item.verdict == "lie" %}
-        <li style="margin:.15rem 0; padding:.2rem .4rem; border-left:.25rem solid var(--status-err); background:var(--surface); font-size:.8rem">
-          <strong>{{ item.category }}</strong> — {{ item.claim }}
-          <span style="color:var(--text-secondary)"> · not in master CV</span>
-        </li>
-        {% endif %}{% endfor %}
-      </ul>
-
-      <details style="margin-top:.4rem; font-size:.78rem">
-        <summary style="cursor:pointer; color:var(--text-secondary)">All claims ({{ v.items.len() }})</summary>
-        <ul style="list-style:none; padding:0; margin-top:.2rem">
-          {% for item in v.items %}
-          <li style="margin:.1rem 0; padding:.15rem .3rem; border-left:.2rem solid
-                     {% if item.verdict == "truth" %}var(--status-ok){% else %}var(--status-err){% endif %};
-                     font-size:.76rem">
-            <span style="color:{% if item.verdict == "truth" %}var(--status-ok){% else %}var(--status-err){% endif %}">
-              {% if item.verdict == "truth" %}✓{% else %}✗{% endif %}
-            </span>
-            {{ item.category }}: {{ item.claim }}
-            {% if !item.evidence.is_empty() %}<span style="color:var(--text-secondary)"> — {{ item.evidence }}</span>{% endif %}
-          </li>
-          {% endfor %}
-        </ul>
-      </details>
-
-      {% if v.gap_report != "" %}
-      <div style="margin-top:.4rem; padding:.4rem; background:var(--status-err); color:var(--status-err-text); border-radius:.2rem; font-size:.8rem">
-        <strong>Gap:</strong> {{ v.gap_report }}
-      </div>
-      {% endif %}
-    </section>
-    {% endif %}
-
-    {% if let Some(rk) = rank %}
-    <section style="margin-top:0.5rem; padding:.5rem; background:var(--surface-alt); border-radius:.4rem">
-      <h3 style="font-size:.9rem; margin-bottom:.3rem">HR Approval Prediction</h3>
-      <p style="font-size:.82rem"><strong>{{ rk.approval_probability }}%</strong> chance of HR shortlisting</p>
-      <div style="margin-top:.3rem; font-size:.8rem">
-        <p><strong>Good:</strong></p>
-        <ul>{% for g in rk.good %}<li>{{ g }}</li>{% endfor %}</ul>
-      </div>
-      <div style="margin-top:.3rem; font-size:.8rem">
-        <p><strong>Bad:</strong></p>
-        <ul>{% for b in rk.bad %}<li>{{ b }}</li>{% endfor %}</ul>
-      </div>
-      <div style="margin-top:.3rem; font-size:.8rem">
-        <p><strong>Improvements:</strong></p>
-        <ul>{% for i in rk.improvements %}<li>{{ i }}</li>{% endfor %}</ul>
-      </div>
-    </section>
-    {% endif %}
-
-    {% if status == "generated" %}
-    <div style="margin-top:1rem; padding:.75rem; background:var(--surface-alt); border-radius:.4rem">
-      <div style="display:flex; gap:.75rem; align-items:flex-end">
-        <div style="flex:1">
-          <label for="review-notes" style="font-size:.82rem; color:var(--text-secondary)">Tell the writer what to fix (optional)</label>
-          <textarea id="review-notes" name="review_notes"
-                    placeholder="e.g. add Kubernetes to skills, shorten summary, use more metrics..."
-                    style="width:100%; min-height:3rem"></textarea>
-        </div>
-        <div style="display:flex; flex-direction:column; gap:.3rem; white-space:nowrap">
-          <button hx-post="/jobs/{{ id }}/regenerate"
-                  hx-include="#review-notes">♻ Regenerate</button>
-          <a href="/profile" role="button" class="outline" style="font-size:.75rem; text-align:center">Edit master CV →</a>
-        </div>
-      </div>
-    </div>
-    {% endif %}
-  </section>
-
-  <section style="flex:1; overflow:hidden; display:flex; flex-direction:column; padding:.5rem; background:var(--surface-alt)">
-    <iframe src="/jobs/{{ id }}/cv"
-            style="flex:1; border:none; border-radius:6px; box-shadow:0 0 0 1px var(--border-subtle); background:#fff"></iframe>
-  </section>
+<div id="job-detail">
+{% include "fragments/job_detail.html" %}
 </div>
-</div>
-</div>
+<script>
+(function() {
+  const jobId = '{{ id }}';
+  let timer = null;
+  function setup() {
+    const src = window.__sse;
+    if (!src) { setTimeout(setup, 100); return; }
+    src.addEventListener('job-update', function() {
+      if (timer) return;
+      timer = setTimeout(() => {
+        timer = null;
+        fetch('/jobs/' + jobId + '/fragment')
+          .then(r => r.text())
+          .then(html => {
+            const el = document.getElementById('job-detail');
+            if (el) el.innerHTML = html;
+          });
+      }, 200);
+    });
+  }
+  setup();
+})();
+</script>
 {% endblock %}

@@ -31,11 +31,14 @@
 </div>
 <script>
 (function() {
-  const src = window.__sse;
-  if (!src) return;
-  const refresh = () => htmx.ajax('GET', '/crawl/status', {target: '#crawl-status', swap: 'innerHTML'});
-  src.addEventListener('crawl-progress', refresh);
-  src.addEventListener('crawl-finished', refresh);
+  function setup() {
+    const src = window.__sse;
+    if (!src) { setTimeout(setup, 100); return; }
+    const refresh = () => htmx.ajax('GET', '/crawl/status', {target: '#crawl-status', swap: 'innerHTML'});
+    src.addEventListener('crawl-progress', refresh);
+    src.addEventListener('crawl-finished', refresh);
+  }
+  setup();
 })();
 </script>
 {% endblock %}

@@ -5,4 +5,5 @@
 //! calls continue to work.
 
 pub use crate::pipeline::process_job;
+pub use crate::pipeline::process_manual_job;
 pub use crate::pipeline::regenerate_cv;

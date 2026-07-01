@@ -6,8 +6,17 @@ pub struct JobForm {
 }
 
 #[derive(Deserialize)]
+pub struct ManualJobForm {
+    pub title:       String,
+    pub description: String,
+    pub company:     Option<String>,
+    pub source_url:  Option<String>,
+}
+
+#[derive(Deserialize)]
 pub struct RegenerateForm {
-    pub review_notes: Option<String>,
+    pub review_notes:   Option<String>,
+    pub full_pipeline:  Option<String>,
 }
 
 #[derive(Deserialize)]

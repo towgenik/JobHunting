@@ -1,0 +1,118 @@
+{% if jobs.is_empty() %}
+<p style="color:var(--text-secondary); font-size:.85rem; padding:.5rem">
+  Paste a job description above to get started.
+</p>
+{% endif %}
+
+{% for job in jobs %}
+<article id="workshop-job-{{ job.id }}">
+  {% if job.status == "generated" %}
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:.6rem; flex-wrap:wrap">
+    <div style="flex:1; min-width:200px">
+      <strong>{{ job.title }}</strong>
+      {% if !job.company.is_empty() %}<span style="color:var(--text-secondary)"> · {{ job.company }}</span>{% endif %}
+      {% if job.url.starts_with("manual:") %}
+      <div style="font-size:.75rem; color:var(--text-secondary); margin-top:.1rem">{{ job.url }}</div>
+      {% else %}
+      <div style="font-size:.75rem; margin-top:.1rem"><a href="{{ job.url }}" target="_blank" style="word-break:break-all">{{ job.url }}</a></div>
+      {% endif %}
+    </div>
+    <div style="display:flex; gap:.3rem; align-items:center; flex-shrink:0">
+      {% if job.review_score >= 85 %}
+      <mark style="background:var(--status-ok);color:var(--status-ok-text);font-size:.78rem;white-space:nowrap">{{ job.review_score }}/100 pass</mark>
+      {% else if job.review_score > 0 %}
+      <mark style="background:var(--status-err);color:var(--status-err-text);font-size:.78rem;white-space:nowrap">{{ job.review_score }}/100 needs work</mark>
+      {% endif %}
+      {% if job.truth_pct > 0 %}
+      <mark style="background:var(--surface-alt);color:var(--text-secondary);font-size:.78rem;white-space:nowrap">{{ job.truth_pct }}% true</mark>
+      {% endif %}
+      {% if job.approval_probability > 0 %}
+      <mark style="background:var(--surface-alt);color:var(--text-secondary);font-size:.78rem;white-space:nowrap">HR: {{ job.approval_probability }}%</mark>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if !job.review_feedback.is_empty() %}
+  <details style="margin-top:.3rem; font-size:.8rem">
+    <summary style="cursor:pointer; color:var(--text-secondary)">Review feedback</summary>
+    <div style="white-space:pre-wrap; margin-top:.2rem; padding:.4rem; background:var(--surface-alt); border-radius:.2rem; max-height:10rem; overflow-y:auto">{{ job.review_feedback }}</div>
+  </details>
+  {% endif %}
+
+  {% if !job.fabrication_items.is_empty() %}
+  <div style="margin-top:.3rem; font-size:.78rem; color:var(--status-err)">
+    ⚠ {{ job.fabrication_items.len() }} unsupported claims:
+    <ul style="margin:.15rem 0; padding-left:1.2rem">
+      {% for item in job.fabrication_items %}
+      <li>{{ item }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if !job.improvements.is_empty() %}
+  <details style="margin-top:.2rem; font-size:.78rem">
+    <summary style="cursor:pointer; color:var(--text-secondary)">Improvements ({{ job.improvements.len() }})</summary>
+    <ul style="margin:.15rem 0; padding-left:1.2rem">
+      {% for imp in job.improvements %}<li>{{ imp }}</li>{% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+
+  <div style="display:flex; gap:.4rem; margin-top:.4rem; flex-wrap:wrap">
+    <a href="/jobs/{{ job.id }}" role="button" class="outline" style="font-size:.75rem; padding:.15rem .4rem">Full Review →</a>
+    <a href="/jobs/{{ job.id }}/cv" target="_blank" role="button" class="outline" style="font-size:.75rem; padding:.15rem .4rem">PDF</a>
+    <form hx-post="/jobs/{{ job.id }}/regenerate"
+          hx-target="#workshop-job-{{ job.id }}"
+          hx-swap="outerHTML"
+          style="display:flex; gap:.3rem; align-items:center; margin:0">
+      <input type="hidden" name="full_pipeline" value="true">
+      <button type="submit" class="secondary outline" style="font-size:.75rem; padding:.15rem .4rem">♻ Redo</button>
+    </form>
+  </div>
+
+  {% else if job.status == "failed" %}
+  <div style="display:flex; justify-content:space-between; align-items:center">
+    <div>
+      <strong>{{ job.title }}</strong>
+      {% if !job.company.is_empty() %}<span style="color:var(--text-secondary)"> · {{ job.company }}</span>{% endif %}
+      {% if job.url.starts_with("manual:") %}
+      <div style="font-size:.75rem; color:var(--text-secondary)">{{ job.url }}</div>
+      {% else %}
+      <div style="font-size:.75rem"><a href="{{ job.url }}" target="_blank">{{ job.url }}</a></div>
+      {% endif %}
+      <span style="color:var(--status-err); font-size:.8rem">failed</span>
+    </div>
+    <div style="display:flex; gap:.3rem">
+      <form hx-post="/jobs/{{ job.id }}/regenerate"
+            hx-target="#workshop-job-{{ job.id }}"
+            hx-swap="outerHTML"
+            style="display:flex; margin:0">
+        <input type="hidden" name="full_pipeline" value="true">
+        <button type="submit" class="secondary outline" style="font-size:.75rem; padding:.15rem .4rem">♻ Retry</button>
+      </form>
+      <button hx-delete="/jobs/{{ job.id }}/delete"
+              hx-confirm="Delete?"
+              hx-target="#workshop-job-{{ job.id }}"
+              hx-swap="outerHTML"
+              class="secondary outline"
+              style="font-size:.75rem; padding:.15rem .4rem">✕</button>
+    </div>
+  </div>
+
+  {% else %}
+  <div aria-busy="true">
+    <strong>{{ job.title }}</strong>
+    {% if !job.company.is_empty() %}<span style="color:var(--text-secondary)"> · {{ job.company }}</span>{% endif %}
+    {% if job.url.starts_with("manual:") %}
+    <div style="font-size:.75rem; color:var(--text-secondary)">{{ job.url }}</div>
+    {% else %}
+    <div style="font-size:.75rem"><a href="{{ job.url }}" target="_blank">{{ job.url }}</a></div>
+    {% endif %}
+    {% if !job.progress.is_empty() %}
+    <div style="font-size:.8rem; color:var(--text-secondary); margin-top:.3rem">{{ job.progress }}</div>
+    {% endif %}
+  </div>
+  {% endif %}
+</article>
+{% endfor %}

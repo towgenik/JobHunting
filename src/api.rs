@@ -98,6 +98,14 @@ async fn get_job_detail(
 #[derive(Deserialize)]
 struct SubmitJobBody { url: String }
 
+#[derive(Deserialize)]
+struct ManualJobBody {
+    title:       String,
+    description: String,
+    company:     Option<String>,
+    source_url:  Option<String>,
+}
+
 async fn submit_job(
     State(app): State<AppState>,
     Json(body): Json<SubmitJobBody>,
@@ -126,6 +134,36 @@ async fn submit_job(
     });
 
     Json(json!({"id": job_id.to_string(), "existing": false})).into_response()
+}
+
+async fn submit_manual_job_api(
+    State(app): State<AppState>,
+    Json(body): Json<ManualJobBody>,
+) -> impl IntoResponse {
+    let title = body.title.trim().to_string();
+    let description = body.description.trim().to_string();
+    if title.is_empty() || description.is_empty() {
+        return err(StatusCode::BAD_REQUEST, "title and description are required").into_response();
+    }
+    let company = body.company.unwrap_or_default();
+    let source_url = body.source_url.unwrap_or_default();
+
+    let job_id = match db::create_manual_job_stub(&app.db, &title, &company, &description, &source_url).await {
+        Ok(id) => id,
+        Err(e) => return err(StatusCode::INTERNAL_SERVER_ERROR, &format!("create_manual_job_stub: {e}")).into_response(),
+    };
+
+    tokio::spawn({
+        let app = app.clone();
+        async move {
+            if let Err(e) = generate::process_manual_job(&app, job_id).await {
+                eprintln!("process_manual_job {job_id} failed: {e}");
+                let _ = db::delete_job(&app.db, job_id).await;
+            }
+        }
+    });
+
+    Json(json!({"id": job_id.to_string()})).into_response()
 }
 
 async fn job_card(
@@ -496,6 +534,7 @@ pub fn api_router(state: AppState) -> Router<AppState> {
     Router::new()
         .route("/api/health",               get(health))
         .route("/api/jobs",                 get(list_jobs).post(submit_job))
+        .route("/api/jobs/manual",          post(submit_manual_job_api))
         .route("/api/jobs/:id",             get(get_job_detail).delete(delete_job))
         .route("/api/jobs/:id/card",        get(job_card))
         .route("/api/jobs/:id/regenerate",  post(regenerate_job))
