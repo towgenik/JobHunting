@@ -54,21 +54,23 @@ pub async fn save_llm_config(pool: &SqlitePool, config: &LlmConfigRow) -> Result
 // ---------------------------------------------------------------------------
 
 pub struct AgentSettings {
-    pub ctx_window:          i64,
-    pub max_output:          i64,
-    pub thinking_effort:     String,
-    pub wiki_query_max_hops: i64,
-    pub wiki_auto_ingest:    bool,
+    pub ctx_window:              i64,
+    pub max_output:              i64,
+    pub thinking_effort:         String,
+    pub wiki_query_max_hops:     i64,
+    pub wiki_auto_ingest:        bool,
+    pub max_review_iterations:   i64,
 }
 
 impl Default for AgentSettings {
     fn default() -> Self {
         Self {
-            ctx_window:          1_048_576,
-            max_output:          131_072,
-            thinking_effort:     "high".into(),
-            wiki_query_max_hops: 10,
-            wiki_auto_ingest:    false,
+            ctx_window:              1_048_576,
+            max_output:              131_072,
+            thinking_effort:         "high".into(),
+            wiki_query_max_hops:     10,
+            wiki_auto_ingest:        false,
+            max_review_iterations:   5,
         }
     }
 }
@@ -77,17 +79,18 @@ pub async fn get_agent_settings(pool: &SqlitePool) -> Result<AgentSettings> {
     use sqlx::Row;
     let row = sqlx::query(
         "SELECT agent_ctx_window, agent_max_output, agent_thinking_effort,
-                agent_wiki_query_max_hops, wiki_auto_ingest
+                agent_wiki_query_max_hops, wiki_auto_ingest, agent_max_review_iterations
          FROM settings WHERE id = 1"
     )
     .fetch_one(pool)
     .await?;
     Ok(AgentSettings {
-        ctx_window:          row.try_get::<i64, _>("agent_ctx_window").unwrap_or(200_000),
-        max_output:          row.try_get::<i64, _>("agent_max_output").unwrap_or(16384),
-        thinking_effort:     row.try_get::<Option<String>, _>("agent_thinking_effort")?.unwrap_or_else(|| "high".into()),
-        wiki_query_max_hops: row.try_get::<i64, _>("agent_wiki_query_max_hops").unwrap_or(10),
-        wiki_auto_ingest:    row.try_get::<i64, _>("wiki_auto_ingest").unwrap_or(0) != 0,
+        ctx_window:              row.try_get::<i64, _>("agent_ctx_window").unwrap_or(1_048_576),
+        max_output:              row.try_get::<i64, _>("agent_max_output").unwrap_or(131_072),
+        thinking_effort:         row.try_get::<Option<String>, _>("agent_thinking_effort")?.unwrap_or_else(|| "high".into()),
+        wiki_query_max_hops:     row.try_get::<i64, _>("agent_wiki_query_max_hops").unwrap_or(10),
+        wiki_auto_ingest:        row.try_get::<i64, _>("wiki_auto_ingest").unwrap_or(0) != 0,
+        max_review_iterations:   row.try_get::<i64, _>("agent_max_review_iterations").unwrap_or(5),
     })
 }
 
@@ -95,13 +98,14 @@ pub async fn save_agent_settings(pool: &SqlitePool, s: &AgentSettings) -> Result
     sqlx::query(
         "UPDATE settings SET agent_ctx_window = ?, agent_max_output = ?,
          agent_thinking_effort = ?, agent_wiki_query_max_hops = ?,
-         wiki_auto_ingest = ? WHERE id = 1"
+         wiki_auto_ingest = ?, agent_max_review_iterations = ? WHERE id = 1"
     )
     .bind(s.ctx_window)
     .bind(s.max_output)
     .bind(&s.thinking_effort)
     .bind(s.wiki_query_max_hops)
     .bind(s.wiki_auto_ingest as i64)
+    .bind(s.max_review_iterations)
     .execute(pool)
     .await?;
     Ok(())

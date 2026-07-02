@@ -29,7 +29,7 @@ pub async fn pre_screen(
     let context = json!({
         "master_cv": master_cv,
         "job_title": title,
-        "job_description": description.chars().take(1500).collect::<String>(),
+        "job_description": description,
     });
     let task = "Score 0-100 how well this candidate fits this role:\n\
         - 70-100: good_match — right skills, role type, experience.\n\

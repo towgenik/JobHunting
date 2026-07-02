@@ -127,6 +127,11 @@
       <span style="font-size:.82rem; color:var(--text-secondary)">max traversal depth (future)</span>
     </div>
     <div class="form-row">
+      <label>Review iterations</label>
+      <input name="max_review_iterations" type="number" value="{{ agent_max_review_iterations }}" min="1" max="20" style="max-width:80px">
+      <span style="font-size:.82rem; color:var(--text-secondary)">max reviewer↔writer loop iterations</span>
+    </div>
+    <div class="form-row">
       <label>Auto-ingest</label>
       <input type="checkbox" name="wiki_auto_ingest"{% if wiki_auto_ingest %} checked{% endif %}>
       <span style="font-size:.82rem; color:var(--text-secondary)">run wiki ingest on startup if raw/ changed</span>

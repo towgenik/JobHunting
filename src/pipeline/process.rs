@@ -22,6 +22,7 @@ async fn run_pipeline(app: &AppState, job_id: Uuid, master_cv: &str, jd: &str) -
     let max_output = agent.max_output.max(256) as u32;
     let thinking_effort = agent.thinking_effort.clone();
     let ctx_window = agent.ctx_window.max(1000) as u32;
+    let max_iters = agent.max_review_iterations.max(1) as u32;
 
     // Deal-breaker scan
     let jd_lower = jd.to_lowercase();
@@ -67,21 +68,22 @@ async fn run_pipeline(app: &AppState, job_id: Uuid, master_cv: &str, jd: &str) -
     let mut writer_constraints = cv.get("constraints").and_then(|v| v.as_str()).filter(|s| !s.is_empty()).map(|s| s.to_string());
     strip_cv_metadata(&mut cv);
     db::save_cv_draft(&app.db, job_id, cv.clone()).await?;
-    db::set_progress(&app.db, job_id, "Reviewer 1/5: scoring draft…").await?;
-    publish_job_update(app, job_id, "generating", "Reviewer 1/5: scoring draft…");
+    db::set_progress(&app.db, job_id, "Reviewer 1/{max_iters}: scoring draft…").await?;
+    publish_job_update(app, job_id, "generating", "Reviewer 1/{max_iters}: scoring draft…");
 
-    // 2. Review loop (≤5 iterations)
-    const MAX_ITERS: u32 = 5;
+    // 2. Review loop
     let mut review_score: i64 = 0;
     let mut review_feedback = String::new();
     let mut fabrication_warning = false;
     let mut satisfied = false;
     let mut iters_run: u32 = 0;
+    let mut prev_score: i64 = 0;
+    let mut plateau_count: u32 = 0;
 
-    for iteration in 0..MAX_ITERS {
+    for iteration in 0..max_iters {
         iters_run = iteration + 1;
         let t0 = std::time::Instant::now();
-        eprintln!("job {job_id}: reviewer {}/{MAX_ITERS} →", iters_run);
+        eprintln!("job {job_id}: reviewer {iters_run}/{max_iters} →");
         let review = review_call(app, jd, &cv, writer_constraints.as_deref(), max_output, Some(&thinking_effort)).await?;
         review_score = review["score"].as_i64().unwrap_or(0);
         review_feedback = format!(
@@ -90,7 +92,22 @@ async fn run_pipeline(app: &AppState, job_id: Uuid, master_cv: &str, jd: &str) -
             review["strengths"].as_str().unwrap_or("")
         );
         satisfied = parse_satisfied(&review);
-        eprintln!("job {job_id}: reviewer {}/{MAX_ITERS} ✓ score={review_score} satisfied={satisfied} ({:.1}s)", iters_run, t0.elapsed().as_secs_f64());
+        eprintln!("job {job_id}: reviewer {iters_run}/{max_iters} ✓ score={review_score} satisfied={satisfied} ({:.1}s)", t0.elapsed().as_secs_f64());
+
+        // Early exit: score plateaued (improvement <5 for 2 consecutive iterations)
+        if iteration > 0 {
+            let improvement = review_score - prev_score;
+            if improvement < 5 {
+                plateau_count += 1;
+                if plateau_count >= 2 {
+                    eprintln!("job {job_id}: giving up — score plateaued (prev={prev_score}, now={review_score}, no improvement for {plateau_count} iterations)");
+                    break;
+                }
+            } else {
+                plateau_count = 0;
+            }
+        }
+        prev_score = review_score;
 
         if iteration == 2 {
             eprintln!("job {job_id}: verifier (mid-loop) →");
@@ -103,11 +120,11 @@ async fn run_pipeline(app: &AppState, job_id: Uuid, master_cv: &str, jd: &str) -
         }
 
         if satisfied { break; }
-        if iteration == MAX_ITERS - 1 { break; }
+        if iteration == max_iters - 1 { break; }
 
         let next_iter = iters_run + 1;
-        db::set_progress(&app.db, job_id, &format!("Writer: revising draft ({next_iter}/{MAX_ITERS})…")).await?;
-        publish_job_update(app, job_id, "generating", &format!("Writer: revising draft ({next_iter}/{MAX_ITERS})…"));
+        db::set_progress(&app.db, job_id, &format!("Writer: revising draft ({next_iter}/{max_iters})…")).await?;
+        publish_job_update(app, job_id, "generating", &format!("Writer: revising draft ({next_iter}/{max_iters})…"));
         let feedback_for_writer = if fabrication_warning {
             format!(
                 "FABRICATION WARNING: The verifier found that more than 50% of claims \
@@ -129,8 +146,8 @@ async fn run_pipeline(app: &AppState, job_id: Uuid, master_cv: &str, jd: &str) -
         writer_constraints = cv.get("constraints").and_then(|v| v.as_str()).filter(|s| !s.is_empty()).map(|s| s.to_string());
         strip_cv_metadata(&mut cv);
         db::save_cv_draft(&app.db, job_id, cv.clone()).await?;
-        db::set_progress(&app.db, job_id, &format!("Reviewer {}/{MAX_ITERS}: scoring draft…", iters_run + 1)).await?;
-        publish_job_update(app, job_id, "generating", &format!("Reviewer {}/{MAX_ITERS}: scoring draft…", iters_run + 1));
+        db::set_progress(&app.db, job_id, &format!("Reviewer {}/{max_iters}: scoring draft…", iters_run + 1)).await?;
+        publish_job_update(app, job_id, "generating", &format!("Reviewer {}/{max_iters}: scoring draft…", iters_run + 1));
     }
 
     // 3. Post-loop verifier
@@ -177,8 +194,10 @@ async fn run_pipeline(app: &AppState, job_id: Uuid, master_cv: &str, jd: &str) -
     // 6. Save — prepend loop status so the user sees it in the UI
     let loop_status = if satisfied {
         format!("✓ Passed in {iters_run} iteration{}", if iters_run == 1 { "" } else { "s" })
+    } else if plateau_count >= 2 {
+        format!("⚠ Gave up at iteration {iters_run} — score plateaued at {review_score}/100")
     } else {
-        format!("⚠ Loop exhausted ({iters_run}/{MAX_ITERS} iterations) — still needs work")
+        format!("⚠ Loop exhausted ({iters_run}/{max_iters} iterations) — still needs work")
     };
     let review_feedback = format!("{loop_status}\n\n{review_feedback}");
     db::save_review(&app.db, job_id, review_score, &review_feedback).await?;

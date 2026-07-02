@@ -43,6 +43,7 @@ pub async fn settings_page(State(app): State<AppState>) -> impl IntoResponse {
         agent_thinking_effort: agent.thinking_effort,
         agent_wiki_query_max_hops: agent.wiki_query_max_hops,
         wiki_auto_ingest: agent.wiki_auto_ingest,
+        agent_max_review_iterations: agent.max_review_iterations,
         llm_concurrency:    pipeline.llm_concurrency,
         max_jobs_per_crawl: pipeline.max_jobs_per_crawl,
         profile_unlocked_files: unlocked,
@@ -98,11 +99,12 @@ pub async fn settings_agent_save(
     Form(body): Form<AgentSettingsForm>,
 ) -> Response {
     let config = db::AgentSettings {
-        ctx_window:          body.ctx_window.max(1000),
-        max_output:          body.max_output.max(256),
-        thinking_effort:     body.thinking_effort,
-        wiki_query_max_hops: body.wiki_query_max_hops.clamp(1, 50),
-        wiki_auto_ingest:    body.wiki_auto_ingest.as_deref() == Some("on"),
+        ctx_window:              body.ctx_window.max(1000),
+        max_output:              body.max_output.max(256),
+        thinking_effort:         body.thinking_effort,
+        wiki_query_max_hops:     body.wiki_query_max_hops.clamp(1, 50),
+        wiki_auto_ingest:        body.wiki_auto_ingest.as_deref() == Some("on"),
+        max_review_iterations:   body.max_review_iterations.clamp(1, 20),
     };
     if let Err(e) = db::save_agent_settings(&app.db, &config).await {
         return Html(format!("<span style=\"color:var(--status-err)\">Save failed: {}</span>",

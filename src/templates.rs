@@ -174,11 +174,12 @@ pub struct SettingsTemplate {
     pub scheduler_runs:   Vec<SchedulerRunRow>,
     pub status:           String,
     // Agent settings
-    pub agent_ctx_window:          i64,
-    pub agent_max_output:          i64,
-    pub agent_thinking_effort:     String,
-    pub agent_wiki_query_max_hops: i64,
-    pub wiki_auto_ingest:          bool,
+    pub agent_ctx_window:              i64,
+    pub agent_max_output:              i64,
+    pub agent_thinking_effort:         String,
+    pub agent_wiki_query_max_hops:     i64,
+    pub wiki_auto_ingest:              bool,
+    pub agent_max_review_iterations:   i64,
     // Pipeline tuning
     pub llm_concurrency:           i64,
     pub max_jobs_per_crawl:        i64,

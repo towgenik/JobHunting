@@ -37,11 +37,12 @@ pub struct SchedulerSettingsForm {
 
 #[derive(Deserialize)]
 pub struct AgentSettingsForm {
-    pub ctx_window:          i64,
-    pub max_output:          i64,
-    pub thinking_effort:     String,
-    pub wiki_query_max_hops: i64,
-    pub wiki_auto_ingest:    Option<String>,
+    pub ctx_window:              i64,
+    pub max_output:              i64,
+    pub thinking_effort:         String,
+    pub wiki_query_max_hops:     i64,
+    pub wiki_auto_ingest:        Option<String>,
+    pub max_review_iterations:   i64,
 }
 
 #[derive(Deserialize)]
