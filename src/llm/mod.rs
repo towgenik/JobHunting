@@ -5,6 +5,7 @@
 
 pub mod transport;
 pub mod types;
+pub mod provider;
 
 pub use transport::{
     call_llm_tool,
@@ -12,3 +13,5 @@ pub use transport::{
     call_llm_tool_loop,
 };
 pub use types::ToolDef;
+pub use provider::Provider;
+pub use transport::{fetch_models, fetch_capabilities};

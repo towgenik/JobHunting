@@ -1,0 +1,198 @@
+{
+  "_comment": "VISION-ONLY SOTA vision-analysis.json for ~/.agents/vision-analysis.json. Ranked by MMMU-Pro / MMMU vision benchmark (best first). Install: cp vision-analysis.json ~/.agents/vision-analysis.json && chmod 600 ~/.agents/vision-analysis.json. ONE file: groups + settings. A 'group' = (base_url, api_key) + the models that share them. Each model has its own context_length + max_output + optional max_dim. Register every model you want to call under exactly one group.",
+  "groups": {
+    "google": {
+      "_comment": "Direct Gemini API. #1 best vision benchmark: Gemini 3.5 Flash (83.6% MMMU-Pro). All Gemini models are natively multimodal (text, image, video, audio, PDF).",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "api_key": "AIza-PASTE-HERE",
+      "models": {
+        "gemini-3.5-flash": {
+          "context_length": 1048576,
+          "max_output": 65536,
+          "max_dim": 3072
+        },
+        "gemini-3.1-pro": {
+          "context_length": 1000000,
+          "max_output": 65536,
+          "max_dim": 3072
+        },
+        "gemini-3.1-flash": {
+          "context_length": 1000000,
+          "max_output": 64000,
+          "max_dim": 3072
+        },
+        "gemini-3.1-flash-lite": {
+          "context_length": 1000000,
+          "max_output": 64000,
+          "max_dim": 3072
+        },
+        "gemini-3.1-pro-image": {
+          "context_length": 1000000,
+          "max_output": 65536,
+          "max_dim": 3072
+        },
+        "gemini-3.1-flash-image": {
+          "context_length": 1000000,
+          "max_output": 64000,
+          "max_dim": 3072
+        }
+      }
+    },
+    "openrouter": {
+      "_comment": "Unified router for frontier models. Vision models ranked by benchmark within.",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key": "sk-or-v1-PASTE-HERE",
+      "models": {
+        "openai/gpt-5.5-pro": {
+          "context_length": 1050000,
+          "max_output": 128000
+        },
+        "google/gemini-3.5-flash": {
+          "context_length": 1048576,
+          "max_output": 65536,
+          "max_dim": 3072
+        },
+        "google/gemini-3.1-pro": {
+          "context_length": 1000000,
+          "max_output": 65536,
+          "max_dim": 3072
+        },
+        "anthropic/claude-opus-4.7": {
+          "context_length": 200000,
+          "max_output": 32000
+        },
+        "anthropic/claude-sonnet-4.6": {
+          "context_length": 200000,
+          "max_output": 16000
+        },
+        "anthropic/claude-opus-4.6": {
+          "context_length": 200000,
+          "max_output": 32000
+        },
+        "x-ai/grok-4": {
+          "context_length": 256000,
+          "max_output": 16384
+        },
+        "meta-llama/llama-4-maverick:free": {
+          "context_length": 128000,
+          "max_output": 8192,
+          "max_dim": 2048
+        },
+        "meta-llama/llama-4-scout:free": {
+          "context_length": 128000,
+          "max_output": 8192,
+          "max_dim": 2048
+        }
+      }
+    },
+    "dashscope": {
+      "_comment": "Alibaba Qwen vision models. Qwen3.7-Plus is the latest vision-capable model. Max dim 2048 for all Qwen VL models.",
+      "base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+      "api_key": "sk-PASTE-HERE",
+      "models": {
+        "qwen3.7-plus": {
+          "context_length": 128000,
+          "max_output": 16384,
+          "max_dim": 2048
+        },
+        "qwen3.6-plus": {
+          "context_length": 128000,
+          "max_output": 16384,
+          "max_dim": 2048
+        },
+        "qwen3-vl": {
+          "context_length": 128000,
+          "max_output": 16384,
+          "max_dim": 2048
+        },
+        "qwen-vl-max": {
+          "context_length": 32768,
+          "max_output": 16384,
+          "max_dim": 2048
+        },
+        "qwen-vl-plus": {
+          "context_length": 32768,
+          "max_output": 16384,
+          "max_dim": 2048
+        }
+      }
+    },
+    "moonshot": {
+      "_comment": "Moonshot Kimi native multimodal models. K2.6 is the latest SOTA with native vision agentic capabilities.",
+      "base_url": "https://api.moonshot.cn/v1",
+      "api_key": "sk-PASTE-HERE",
+      "models": {
+        "kimi-k2.6": {
+          "context_length": 256000,
+          "max_output": 8192
+        },
+        "kimi-k2.7-code": {
+          "context_length": 256000,
+          "max_output": 8192
+        },
+        "kimi-k2.5": {
+          "context_length": 256000,
+          "max_output": 8192
+        },
+        "moonshot-v1-128k-vision-preview": {
+          "context_length": 131000,
+          "max_output": 131000
+        },
+        "moonshot-v1-32k-vision-preview": {
+          "context_length": 32768,
+          "max_output": 2048
+        },
+        "moonshot-v1-8k-vision-preview": {
+          "context_length": 8192,
+          "max_output": 2048
+        }
+      }
+    },
+    "zhipu": {
+      "_comment": "Zhipu GLM vision models. GLM-5V-Turbo is the vision coding specialist. GLM-5.2 has 1M context.",
+      "base_url": "https://open.bigmodel.cn/api/paas/v4",
+      "api_key": "PASTE-HERE",
+      "models": {
+        "glm-5v-turbo": {
+          "context_length": 200000,
+          "max_output": 8192,
+          "max_dim": 4096
+        },
+        "glm-5.2": {
+          "context_length": 1000000,
+          "max_output": 8192
+        },
+        "glm-5.2[1m]": {
+          "context_length": 1000000,
+          "max_output": 8192
+        },
+        "glm-4.5v": {
+          "context_length": 128000,
+          "max_output": 4096,
+          "max_dim": 4096
+        }
+      }
+    }
+  },
+  "default_model": "gemini-3.5-flash",
+  "fallback_models": [
+    "openai/gpt-5.5-pro",
+    "gemini-3.1-pro",
+    "anthropic/claude-opus-4.7",
+    "kimi-k2.6",
+    "qwen3.7-plus"
+  ],
+  "_fallback_on_doc": "Substring-match against the error message. Add '401' to also fall through on auth errors. Pass --no-fallback per-call to disable.",
+  "fallback_on": ["429", "timeout", "5xx", "network"],
+
+  "quality": 85,
+  "request_timeout": 120,
+
+  "thinking": {
+    "enabled": false,
+    "disable_payload": {
+      "reasoning": {"enabled": false},
+      "chat_template_kwargs": {"enable_thinking": false}
+    }
+  }
+}

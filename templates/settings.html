@@ -13,21 +13,29 @@
   .btn-row { display:flex; gap:.5rem; margin-top:.5rem }
   table { font-size:.82rem; width:100% }
   th, td { padding:.2rem .4rem }
-  .status-msg { font-size:.82rem; min-height:1.2em }
+  .status-msg { font-size:.75rem; min-height:1em; display:inline-block }
 </style>
 <div id="settings-content">
 
-<span id="settings-status" class="status-msg">{{ status }}</span>
-
 <section>
-  <h3>LLM Configuration</h3>
-  <form hx-post="/settings/llm" hx-target="#settings-status" hx-swap="innerHTML">
+  <h3>LLM Configuration <span id="llm-status" class="status-msg"></span></h3>
+ <form hx-post="/settings/llm" hx-target="#llm-status" hx-trigger="change delay:400ms" hx-swap="innerHTML">
+   <div class="form-row">
+     <label>Model</label>
+     <input name="model" value="{{ llm_model }}" required>
+   </div>
     <div class="form-row">
-      <label>Model</label>
-      <input name="model" value="{{ llm_model }}" required>
+      <button type="button" class="outline" style="font-size:.82rem;padding:.2rem .5rem"
+              onclick="fetchModelList()">Fetch models</button>
+      <span id="models-fetch-status" class="status-msg"></span>
     </div>
-    <div class="form-row">
-      <label>Endpoint</label>
+    <div id="model-combobox" style="display:none; margin-bottom:.5rem">
+      <input id="model-filter" placeholder="Filter models…" autocomplete="off"
+             style="width:100%;margin-bottom:.2rem" oninput="filterModels()">
+      <div id="model-dropdown" style="border:1px solid var(--border-subtle);max-height:220px;overflow:auto;font-size:.82rem"></div>
+    </div>
+   <div class="form-row">
+     <label>Endpoint</label>
       <input name="endpoint" value="{{ llm_endpoint }}" required>
     </div>
     <div class="form-row">
@@ -35,15 +43,19 @@
       <input name="api_key" type="password" value="{{ llm_api_key }}">
     </div>
     <div class="form-row">
-      <label>OpenAI-compat</label>
-      <input type="checkbox" name="openai_compat"{% if llm_openai_compat %} checked{% endif %}>
+      <label>Provider</label>
+      <select name="provider" style="max-width:160px">
+        <option value="openai"{% if llm_provider == "openai" %} selected{% endif %}>OpenAI</option>
+        <option value="openai-compat"{% if llm_provider == "openai-compat" %} selected{% endif %}>OpenAI-compat</option>
+        <option value="anthropic"{% if llm_provider == "anthropic" %} selected{% endif %}>Anthropic</option>
+        <option value="google"{% if llm_provider == "google" %} selected{% endif %}>Google Gemini</option>
+      </select>
     </div>
     <div class="form-row">
       <label>Mock mode</label>
       <input type="checkbox" name="mock_llm"{% if llm_mock %} checked{% endif %}>
     </div>
     <div class="btn-row">
-      <button type="submit">Save</button>
       <button type="button" class="outline"
               hx-post="/settings/test-llm"
               hx-target="#llm-test-status"
@@ -54,8 +66,8 @@
 </section>
 
 <section>
-  <h3>Scheduler</h3>
-  <form hx-post="/settings/scheduler" hx-target="#settings-status" hx-swap="innerHTML">
+  <h3>Scheduler <span id="scheduler-status" class="status-msg"></span></h3>
+  <form hx-post="/settings/scheduler" hx-target="#scheduler-status" hx-trigger="change delay:300ms" hx-swap="innerHTML">
     <div class="form-row">
       <label>Run every</label>
       <input name="interval_minutes" type="number" value="{{ scheduler_interval }}" min="0" style="max-width:100px">
@@ -71,7 +83,6 @@
       <input name="max_pages" type="number" value="{{ scheduler_max_pages }}" min="1" style="max-width:80px">
     </div>
     <div class="btn-row">
-      <button type="submit">Save</button>
       <button type="button" class="outline" onclick="document.getElementById('sched-status').innerHTML='Running…'; fetch('/scheduler/run',{method:'POST'}).then(r=>r.text()).then(t=>{document.getElementById('sched-status').innerHTML=t})">Run now</button>
     </div>
   </form>
@@ -79,75 +90,111 @@
 </section>
 
 <section>
-  <h3>Pipeline Tuning</h3>
-  <form hx-post="/settings/pipeline" hx-target="#settings-status" hx-swap="innerHTML">
+  <h3>Pipeline Tuning <span id="pipeline-status" class="status-msg"></span></h3>
+  <form hx-post="/settings/pipeline" hx-target="#pipeline-status" hx-trigger="change delay:300ms" hx-swap="innerHTML">
     <div class="form-row">
       <label>LLM concurrency</label>
-      <input name="llm_concurrency" type="number" value="{{ llm_concurrency }}" min="1" max="64" style="max-width:80px">
-      <span style="font-size:.82rem; color:var(--text-secondary)">parallel LLM calls (1 = serialized, ideal for free endpoints)</span>
+      <input name="llm_concurrency" type="number" value="{{ llm_concurrency }}" min="1" style="max-width:80px">
+      <span style="font-size:.82rem; color:var(--text-secondary)">parallel LLM calls</span>
     </div>
     <div class="form-row">
       <label>Max jobs/crawl</label>
-      <input name="max_jobs_per_crawl" type="number" value="{{ max_jobs_per_crawl }}" min="5" max="500" style="max-width:80px">
-      <span style="font-size:.82rem; color:var(--text-secondary)">per-crawl cap (prevents 200-job dumps)</span>
-    </div>
-    <p style="font-size:.78rem; color:var(--text-secondary); margin-top:.3rem">
-      Concurrency changes apply on next restart.
-    </p>
-    <div class="btn-row">
-      <button type="submit">Save</button>
+      <input name="max_jobs_per_crawl" type="number" value="{{ max_jobs_per_crawl }}" min="1" style="max-width:80px">
+      <span style="font-size:.82rem; color:var(--text-secondary)">per-crawl cap</span>
     </div>
   </form>
 </section>
 
 <section>
-  <h3>Agent Settings</h3>
-  <form hx-post="/settings/agent" hx-target="#settings-status" hx-swap="innerHTML">
+  <h3>Agent Settings <span id="agent-status" class="status-msg"></span></h3>
+  <form hx-post="/settings/agent" hx-target="#agent-status" hx-trigger="change delay:300ms" hx-swap="innerHTML">
+   <div class="form-row">
+     <label>Max output</label>
+     <input name="max_output" type="number" value="{{ agent_max_output }}" min="1" style="max-width:120px">
+     <span style="font-size:.82rem; color:var(--text-secondary)">tokens per LLM call</span>
+   </div>
     <div class="form-row">
-      <label>Max output</label>
-      <input name="max_output" type="number" value="{{ agent_max_output }}" min="256" style="max-width:120px">
-      <span style="font-size:.82rem; color:var(--text-secondary)">tokens per LLM call</span>
+      <button type="button" class="outline" style="font-size:.82rem;padding:.2rem .5rem"
+              onclick="fetchCaps()">Fetch from model</button>
+      <span id="caps-status" class="status-msg"></span>
     </div>
-    <div class="form-row">
-      <label>Thinking effort</label>
-      <select name="thinking_effort" style="max-width:140px">
-        <option value="low"{% if agent_thinking_effort == "low" %} selected{% endif %}>Low</option>
-        <option value="medium"{% if agent_thinking_effort == "medium" %} selected{% endif %}>Medium</option>
-        <option value="high"{% if agent_thinking_effort == "high" %} selected{% endif %}>High</option>
-      </select>
-    </div>
+   <div class="form-row">
+     <label>Thinking effort</label>
+     <select name="thinking_effort" style="max-width:140px">
+        <option value="minimal"{% if agent_thinking_effort == "minimal" %} selected{% endif %}>Minimal</option>
+        <option value="none"{% if agent_thinking_effort == "none" %} selected{% endif %}>None</option>
+       <option value="low"{% if agent_thinking_effort == "low" %} selected{% endif %}>Low</option>
+       <option value="medium"{% if agent_thinking_effort == "medium" %} selected{% endif %}>Medium</option>
+       <option value="high"{% if agent_thinking_effort == "high" %} selected{% endif %}>High</option>
+        <option value="xhigh"{% if agent_thinking_effort == "xhigh" %} selected{% endif %}>XHigh</option>
+        <option value="adaptive"{% if agent_thinking_effort == "adaptive" %} selected{% endif %}>Adaptive</option>
+     </select>
+   </div>
     <div class="form-row">
       <label>Context window</label>
-      <input name="ctx_window" type="number" value="{{ agent_ctx_window }}" min="1000" style="max-width:120px">
-      <span style="font-size:.82rem; color:var(--text-secondary)">tokens (declared budget for agent)</span>
+      <input name="ctx_window" type="number" value="{{ agent_ctx_window }}" min="1" style="max-width:120px">
+      <span style="font-size:.82rem; color:var(--text-secondary)">tokens (declared budget)</span>
     </div>
     <div class="form-row">
       <label>Wiki query hops</label>
-      <input name="wiki_query_max_hops" type="number" value="{{ agent_wiki_query_max_hops }}" min="1" max="50" style="max-width:80px">
-      <span style="font-size:.82rem; color:var(--text-secondary)">max traversal depth (future)</span>
+      <input name="wiki_query_max_hops" type="number" value="{{ agent_wiki_query_max_hops }}" min="1" style="max-width:80px">
     </div>
     <div class="form-row">
       <label>Review iterations</label>
-      <input name="max_review_iterations" type="number" value="{{ agent_max_review_iterations }}" min="1" max="20" style="max-width:80px">
-      <span style="font-size:.82rem; color:var(--text-secondary)">max reviewer↔writer loop iterations</span>
+      <input name="max_review_iterations" type="number" value="{{ agent_max_review_iterations }}" min="1" style="max-width:80px">
     </div>
-    <div class="form-row">
-      <label>Auto-ingest</label>
-      <input type="checkbox" name="wiki_auto_ingest"{% if wiki_auto_ingest %} checked{% endif %}>
-      <span style="font-size:.82rem; color:var(--text-secondary)">run wiki ingest on startup if raw/ changed</span>
-    </div>
-    <div class="btn-row">
-      <button type="submit">Save</button>
-    </div>
+   <div class="form-row">
+     <label>Auto-ingest</label>
+     <input type="checkbox" name="wiki_auto_ingest"{% if wiki_auto_ingest %} checked{% endif %}>
+     <span style="font-size:.82rem; color:var(--text-secondary)">run wiki ingest on startup</span>
+   </div>
+ </form>
+</section>
+
+<section>
+  <h3>Per-Agent Overrides <span id="overrides-status" class="status-msg"></span></h3>
+  <p style="font-size:.82rem; color:var(--text-secondary); margin-bottom:.5rem">
+    Leave empty to inherit the global default above.
+  </p>
+  <form hx-post="/settings/agent-overrides" hx-target="#overrides-status" hx-trigger="change delay:300ms" hx-swap="innerHTML">
+    <table>
+      <thead>
+        <tr><th style="text-align:left">Role</th><th>Max output</th><th>Thinking effort</th></tr>
+      </thead>
+      <tbody>
+      {% for row in agent_override_rows %}
+        <tr>
+          <td style="text-transform:capitalize">{{ row.0 }}</td>
+          <td style="text-align:center">
+            <input name="role" type="hidden" value="{{ row.0 }}">
+            <input name="max_output" type="number" min="1" style="max-width:90px"
+                   value="{{ row.1 }}" placeholder="inherit">
+          </td>
+          <td style="text-align:center">
+            <select name="thinking_effort" style="max-width:110px">
+              <option value="inherit">inherit</option>
+              <option value="minimal"{% if row.2 == "minimal" %} selected{% endif %}>Minimal</option>
+              <option value="none"{% if row.2 == "none" %} selected{% endif %}>None</option>
+              <option value="low"{% if row.2 == "low" %} selected{% endif %}>Low</option>
+              <option value="medium"{% if row.2 == "medium" %} selected{% endif %}>Medium</option>
+              <option value="high"{% if row.2 == "high" %} selected{% endif %}>High</option>
+              <option value="xhigh"{% if row.2 == "xhigh" %} selected{% endif %}>XHigh</option>
+              <option value="adaptive"{% if row.2 == "adaptive" %} selected{% endif %}>Adaptive</option>
+            </select>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
   </form>
 </section>
 
 <section>
-  <h3>Profile File Lock</h3>
+  <h3>Profile File Lock <span id="profile-lock-status" class="status-msg"></span></h3>
   <p style="font-size:.82rem; color:var(--text-secondary); margin-bottom:.5rem">
-    All files are locked by default (AI-managed). Files listed below are unlocked for free editing.
+    All files locked by default. Unlock files for free editing.
   </p>
-  <form hx-post="/settings/profile-lock" hx-target="#settings-status" hx-swap="innerHTML"
+  <form hx-post="/settings/profile-lock" hx-target="#profile-lock-status" hx-trigger="click from:.save-lock" hx-swap="innerHTML"
         hx-on::before-request="collectUnlockedFiles()">
     <input type="hidden" name="unlocked_files" id="unlocked-files-hidden">
     <div id="unlocked-list" style="margin-bottom:.5rem">
@@ -167,7 +214,7 @@
       <button type="button" onclick="addUnlockedFile()" style="font-size:.82rem;padding:.2rem .5rem;margin:0">Add</button>
     </div>
     <div class="btn-row">
-      <button type="submit">Save</button>
+      <button type="submit" class="save-lock">Save</button>
     </div>
   </form>
 </section>
@@ -190,7 +237,6 @@ function addUnlockedFile() {
   const sel = document.getElementById('add-unlock-select');
   const file = sel.value;
   if (!file) return;
-  // Don't add duplicates
   const existing = Array.from(document.querySelectorAll('#unlocked-list span'))
     .map(s => s.textContent.trim());
   if (existing.includes(file)) return;
@@ -205,7 +251,70 @@ function addUnlockedFile() {
     if (!src) { setTimeout(setup, 100); return; }
     src.addEventListener('scheduler-finished', () => htmx.ajax('GET', '/settings/scheduler-runs', {target: '#scheduler-runs', swap: 'innerHTML'}));
   }
-  setup();
+ setup();
 })();
+</script>
+
+<script>
+// --- Model combobox ---
+let __modelList = [];
+const MODEL_RENDER_CAP = 100;
+
+function fetchModelList() {
+  const status = document.getElementById('models-fetch-status');
+  status.innerHTML = 'Fetching…';
+  fetch('/settings/fetch-models', {method:'POST'})
+    .then(r => r.text())
+    .then(html => {
+      const m = html.match(/window\.__models\s*=\s*(\[.*?\]);/s);
+      if (!m) { status.innerHTML = html; return; }
+      __modelList = JSON.parse(m[1]);
+      status.innerHTML = '';
+      const box = document.getElementById('model-combobox');
+      box.style.display = 'block';
+      const input = document.getElementById('model-filter');
+      input.value = document.querySelector('input[name="model"]').value;
+      filterModels();
+      input.focus();
+    })
+    .catch(() => status.innerHTML = '<span style="color:var(--status-err)">Request failed</span>');
+}
+
+function filterModels() {
+  const q = document.getElementById('model-filter').value.toLowerCase();
+  const drop = document.getElementById('model-dropdown');
+  const matches = __modelList.filter(m => m.toLowerCase().includes(q));
+  const shown = matches.slice(0, MODEL_RENDER_CAP);
+  drop.innerHTML = shown.map(m => {
+    const safe = m.replace(/"/g, '&quot;');
+    return `<div onclick="pickModel('${safe}')" style="padding:.2rem .4rem;cursor:pointer" onmouseover="this.style.background='var(--border-subtle)'" onmouseout="this.style.background=''">${m}</div>`;
+  }).join('');
+  if (matches.length > MODEL_RENDER_CAP) {
+    drop.innerHTML += `<div style="padding:.2rem .4rem;color:var(--text-secondary)">…${matches.length - MODEL_RENDER_CAP} more</div>`;
+  }
+}
+
+function pickModel(id) {
+  document.querySelector('input[name="model"]').value = id;
+  document.getElementById('model-combobox').style.display = 'none';
+}
+
+function fetchCaps() {
+  const status = document.getElementById('caps-status');
+  status.innerHTML = 'Fetching…';
+  fetch('/settings/fetch-capabilities', {method:'POST'})
+    .then(r => r.text())
+    .then(html => {
+      status.innerHTML = html;
+      const el = document.getElementById('caps-result');
+      if (el) {
+        const mo = document.querySelector('input[name="max_output"]');
+        const cw = document.querySelector('input[name="ctx_window"]');
+        if (mo) mo.value = el.dataset.out;
+        if (cw) cw.value = el.dataset.ctx;
+      }
+    })
+    .catch(() => status.innerHTML = '<span style="color:var(--status-err)">Request failed</span>');
+}
 </script>
 {% endblock %}

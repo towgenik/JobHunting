@@ -47,3 +47,23 @@ Thumbs.db
 # Local/dev skills (not committed)
 .opencode/skills/cv/
 .opencode/skills/scrape/
+
+# Personal agent tooling (not project code)
+.agents/
+.roo/
+
+# Not for public distribution — reverse-engineered third-party API research
+# and traffic captures (kept locally only). See docs/README note.
+docs/AUTH-GUIDE.md
+docs/auth-strategy-evaluation.md
+docs/api-spec-existing.yaml
+docs/endpoint-inventory.md
+docs/endpoint-inventory-complete.md
+docs/GRAPHQL-REFERENCE.md
+docs/jobstreet-capture.flow
+docs/captures/
+docs/graphql-operations/
+docs/test-results/
+tools/automate-captures.py
+tools/automate-captures-v2.py
+tools/dump-graphql.py

@@ -2,6 +2,8 @@
 // Every handler is a short wrapper around existing db:: / generate:: / profile:: fns.
 // No new business logic, no new deps, no auth (single-user local tool).
 
+use std::sync::Arc;
+
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -15,6 +17,7 @@ use sqlx::Column;
 use uuid::Uuid;
 
 use crate::{db, generate, profile, AppState};
+use crate::llm::Provider;
 use crate::handlers::jobs::is_jobstreet_url;
 
 /// Shorthand for a JSON error response.
@@ -297,15 +300,17 @@ async fn profile_sync(State(app): State<AppState>) -> impl IntoResponse {
 
 async fn llm_config_get(State(app): State<AppState>) -> impl IntoResponse {
     let llm = app.llm_config.read().unwrap_or_else(|e| e.into_inner());
+    let openai_compat = match llm.provider {
+        Provider::Openai | Provider::OpenaiCompat => 1,
+        _ => 0,
+    };
     Json(json!({
         "endpoint": llm.endpoint,
+        "api_key": llm.api_key,
         "model": llm.model,
-        "openai_compat": llm.openai_compat,
+        "provider": llm.provider.to_string(),
         "mock_llm": llm.mock_llm,
-        // mask api_key — show last 4 chars only
-        "api_key_suffix": if llm.api_key.len() > 4 {
-            format!("...{}", &llm.api_key[llm.api_key.len()-4..])
-        } else { "(empty)".into() },
+        "llm_openai_compat": openai_compat,
     }))
 }
 
@@ -314,7 +319,7 @@ struct LlmConfigBody {
     endpoint: String,
     api_key: String,
     model: String,
-    openai_compat: Option<bool>,
+    provider: Option<String>,
     mock_llm: Option<bool>,
 }
 
@@ -322,11 +327,15 @@ async fn llm_config_save(
     State(app): State<AppState>,
     Json(body): Json<LlmConfigBody>,
 ) -> impl IntoResponse {
+    let provider = body.provider.as_deref()
+        .filter(|s| !s.is_empty())
+        .map(Provider::parse)
+        .unwrap_or_else(|| Provider::from_endpoint(body.endpoint.trim()));
     let config = db::LlmConfigRow {
         endpoint: body.endpoint.trim().to_string(),
         api_key: body.api_key.trim().to_string(),
         model: body.model.trim().to_string(),
-        openai_compat: body.openai_compat.unwrap_or(true),
+        provider,
         mock: body.mock_llm.unwrap_or(false),
     };
     if let Err(e) = db::save_llm_config(&app.db, &config).await {
@@ -336,7 +345,7 @@ async fn llm_config_save(
     llm.endpoint = config.endpoint;
     llm.api_key = config.api_key;
     llm.model = config.model;
-    llm.openai_compat = config.openai_compat;
+    llm.provider = config.provider;
     llm.mock_llm = config.mock;
     ok().into_response()
 }
@@ -524,6 +533,255 @@ async fn db_query(
     }
 }
 
+
+// ---------------------------------------------------------------------------
+// Agent settings (JSON API)
+// ---------------------------------------------------------------------------
+
+async fn agent_settings_get(State(app): State<AppState>) -> impl IntoResponse {
+    let agent = db::get_agent_settings(&app.db).await.unwrap_or_default();
+    let last_ingest = db::get_wiki_last_ingest_at(&app.db).await.ok().flatten();
+    Json(json!({
+        "ctx_window": agent.ctx_window,
+        "max_output": agent.max_output,
+        "thinking_effort": agent.thinking_effort,
+        "wiki_query_max_hops": agent.wiki_query_max_hops,
+        "wiki_auto_ingest": agent.wiki_auto_ingest,
+        "wiki_last_ingest_at": last_ingest,
+        "max_review_iterations": agent.max_review_iterations,
+    }))
+}
+
+#[derive(Deserialize)]
+struct AgentSettingsBody {
+    ctx_window:              Option<i64>,
+    max_output:              Option<i64>,
+    thinking_effort:         Option<String>,
+    wiki_query_max_hops:     Option<i64>,
+    wiki_auto_ingest:        Option<bool>,
+    max_review_iterations:   Option<i64>,
+}
+
+async fn agent_settings_save(
+    State(app): State<AppState>,
+    Json(body): Json<AgentSettingsBody>,
+) -> impl IntoResponse {
+    let current = db::get_agent_settings(&app.db).await.unwrap_or_default();
+    let config = db::AgentSettings {
+        ctx_window:              body.ctx_window.unwrap_or(current.ctx_window).max(1),
+        max_output:              body.max_output.unwrap_or(current.max_output).max(1),
+        thinking_effort:         body.thinking_effort.unwrap_or(current.thinking_effort),
+        wiki_query_max_hops:     body.wiki_query_max_hops.unwrap_or(current.wiki_query_max_hops).max(1),
+        wiki_auto_ingest:        body.wiki_auto_ingest.unwrap_or(current.wiki_auto_ingest),
+        max_review_iterations:   body.max_review_iterations.unwrap_or(current.max_review_iterations).max(1),
+    };
+    if let Err(e) = db::save_agent_settings(&app.db, &config).await {
+        return err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()).into_response();
+    }
+    ok().into_response()
+}
+
+// ---------------------------------------------------------------------------
+// Per-agent overrides (JSON API)
+// ---------------------------------------------------------------------------
+
+async fn agent_overrides_get(State(app): State<AppState>) -> impl IntoResponse {
+    let overrides = db::get_agent_overrides(&app.db).await.unwrap_or_default();
+    let mut map = serde_json::Map::new();
+    for role in db::AGENT_ROLES {
+        if let Some(o) = overrides.get(*role) {
+            let mut obj = serde_json::Map::new();
+            if let Some(mo) = o.max_output {
+                obj.insert("max_output".into(), json!(mo));
+            }
+            if let Some(ref te) = o.thinking_effort {
+                obj.insert("thinking_effort".into(), json!(te));
+            }
+            map.insert(role.to_string(), Value::Object(obj));
+        } else {
+            map.insert(role.to_string(), json!({}));
+        }
+    }
+    Json(Value::Object(map))
+}
+
+#[derive(Deserialize)]
+struct OverrideEntry {
+    max_output:      Option<i64>,
+    thinking_effort: Option<String>,
+}
+
+async fn agent_overrides_save(
+    State(app): State<AppState>,
+    Json(body): Json<std::collections::HashMap<String, OverrideEntry>>,
+) -> impl IntoResponse {
+    let mut entries = Vec::new();
+    for role in db::AGENT_ROLES {
+        if let Some(entry) = body.get(*role) {
+            let max_output = entry.max_output.filter(|_| entry.max_output.is_some());
+            let effort = entry.thinking_effort.clone().filter(|s| !s.is_empty() && s != "inherit");
+            entries.push((role.to_string(), max_output, effort));
+        }
+    }
+    if let Err(e) = db::save_agent_overrides(&app.db, &entries).await {
+        return err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()).into_response();
+    }
+    ok().into_response()
+}
+
+// ---------------------------------------------------------------------------
+// Pipeline config (GET)
+// ---------------------------------------------------------------------------
+
+async fn pipeline_config_get(State(app): State<AppState>) -> impl IntoResponse {
+    let c = db::get_pipeline_config(&app.db).await.unwrap_or_default();
+    Json(json!({
+        "llm_concurrency": c.llm_concurrency,
+        "max_jobs_per_crawl": c.max_jobs_per_crawl,
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Profile lock (GET)
+// ---------------------------------------------------------------------------
+
+async fn profile_lock_get(State(app): State<AppState>) -> impl IntoResponse {
+    let unlocked = db::get_unlocked_files(&app.db).await.unwrap_or_default();
+    Json(json!({
+        "unlocked_files": unlocked,
+    }))
+}
+
+#[derive(Deserialize)]
+struct ProfileLockBody {
+    unlocked_files: Vec<String>,
+}
+
+async fn profile_lock_save(
+    State(app): State<AppState>,
+    Json(body): Json<ProfileLockBody>,
+) -> impl IntoResponse {
+    if let Err(e) = db::save_unlocked_files(&app.db, &body.unlocked_files).await {
+        return err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()).into_response();
+    }
+    ok().into_response()
+}
+
+// ---------------------------------------------------------------------------
+// Pipeline config (save)
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+struct PipelineBody {
+    llm_concurrency:    i64,
+    max_jobs_per_crawl: i64,
+}
+
+async fn pipeline_config_save(
+    State(app): State<AppState>,
+    Json(body): Json<PipelineBody>,
+) -> impl IntoResponse {
+    let cfg = db::PipelineConfig {
+        llm_concurrency: body.llm_concurrency.max(1),
+        max_jobs_per_crawl: body.max_jobs_per_crawl.max(1),
+    };
+    if let Err(e) = db::save_pipeline_config(&app.db, &cfg).await {
+        return err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()).into_response();
+    }
+    let new_sem = Arc::new(tokio::sync::Semaphore::new(cfg.llm_concurrency as usize));
+    let mut guard = app.llm_semaphore.write().unwrap_or_else(|e| e.into_inner());
+    *guard = new_sem;
+    ok().into_response()
+}
+
+// ---------------------------------------------------------------------------
+// Test LLM connection
+// ---------------------------------------------------------------------------
+
+async fn test_llm(State(app): State<AppState>) -> impl IntoResponse {
+    match crate::llm::transport::test_llm_connection(&app).await {
+        Ok(latency_ms) => Json(json!({ "ok": true, "latency_ms": latency_ms })).into_response(),
+        Err(e) => err(StatusCode::BAD_GATEWAY, &e.to_string()).into_response(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Scheduler runs list
+// ---------------------------------------------------------------------------
+
+async fn scheduler_runs_list(State(app): State<AppState>) -> impl IntoResponse {
+    let runs = db::list_scheduler_runs(&app.db, 10).await.unwrap_or_default();
+    Json(json!({
+        "runs": runs.iter().map(|r| json!({
+            "started_at": r.started_at,
+            "finished_at": r.finished_at,
+            "status": r.status,
+            "queries_run": r.queries_run,
+            "jobs_found": r.jobs_found,
+            "jobs_filtered": r.jobs_filtered,
+        })).collect::<Vec<_>>(),
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Thinking effort options (static, provider-aware)
+// ---------------------------------------------------------------------------
+
+async fn thinking_effort_options() -> impl IntoResponse {
+    Json(json!({
+        "all": ["none", "minimal", "low", "medium", "high", "xhigh", "adaptive"],
+        "providers": {
+            "openai": ["none", "minimal", "low", "medium", "high", "xhigh"],
+            "anthropic": ["none", "minimal", "low", "medium", "high", "xhigh", "adaptive"],
+            "google": ["none", "minimal", "low", "medium", "high", "xhigh", "adaptive"],
+            "openai-compat": ["none", "minimal", "low", "medium", "high", "xhigh"],
+        }
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Fetch models list (JSON API)
+// ---------------------------------------------------------------------------
+
+async fn fetch_models_list(State(app): State<AppState>) -> impl IntoResponse {
+    match crate::llm::fetch_models(&app).await {
+        Ok(models) => {
+            let items: Vec<Value> = models.iter().map(|m| {
+                let mut obj = json!({"id": m.id});
+                if let Some(ctx) = m.context_window {
+                    obj["context_window"] = json!(ctx);
+                }
+                obj
+            }).collect();
+            Json(json!({"models": items})).into_response()
+        }
+        Err(e) => err(StatusCode::BAD_GATEWAY, &e.to_string()).into_response(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Fetch model capabilities (JSON API)
+// ---------------------------------------------------------------------------
+
+async fn fetch_model_caps(State(app): State<AppState>) -> impl IntoResponse {
+    let model = {
+        let cfg = app.llm_config.read().unwrap_or_else(|e| e.into_inner());
+        cfg.model.clone()
+    };
+    if model.trim().is_empty() {
+        return err(StatusCode::BAD_REQUEST, "no model configured").into_response();
+    }
+    match crate::llm::fetch_capabilities(&app, &model).await {
+        Ok(caps) => Json(json!({
+            "model": model,
+            "ctx_window": caps.ctx_window,
+            "max_output": caps.max_output,
+            "source": caps.source,
+        })).into_response(),
+        Err(e) => err(StatusCode::BAD_GATEWAY, &e.to_string()).into_response(),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
@@ -550,6 +808,15 @@ pub fn api_router(state: AppState) -> Router<AppState> {
         .route("/api/wiki/ingest",          post(wiki_ingest))
         .route("/api/wiki/lint",            post(wiki_lint))
         .route("/api/wiki/lint-report",     get(wiki_lint_report))
+        .route("/api/settings/agent",       get(agent_settings_get).put(agent_settings_save))
+        .route("/api/settings/agent-overrides", get(agent_overrides_get).put(agent_overrides_save))
+        .route("/api/settings/pipeline",      get(pipeline_config_get).post(pipeline_config_save))
+        .route("/api/settings/profile-lock",  get(profile_lock_get).post(profile_lock_save))
+        .route("/api/settings/test-llm",      post(test_llm))
+        .route("/api/settings/scheduler-runs", get(scheduler_runs_list))
+        .route("/api/settings/thinking-effort-options", get(thinking_effort_options))
+        .route("/api/models",               get(fetch_models_list))
+        .route("/api/model-capabilities",   get(fetch_model_caps))
         .route("/api/db/query",             get(db_query))
         .with_state(state)
 }

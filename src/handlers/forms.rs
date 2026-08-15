@@ -24,7 +24,7 @@ pub struct LlmSettingsForm {
     pub endpoint: String,
     pub api_key: String,
     pub model: String,
-    pub openai_compat: Option<String>,
+    pub provider: Option<String>,
     pub mock_llm: Option<String>,
 }
 
@@ -56,8 +56,6 @@ pub struct PipelineForm {
     pub llm_concurrency:     i64,
     pub max_jobs_per_crawl:  i64,
 }
-
-// ponytail: DeleteBatchForm removed — serde_urlencoded can't parse repeated
 
 #[derive(Deserialize)]
 pub struct ProfileLockForm {

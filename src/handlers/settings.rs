@@ -2,16 +2,19 @@ use axum::{
     extract::{Form, State},
     response::{Html, IntoResponse, Response},
 };
+use axum::body::Bytes;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use crate::{AppState, db, events, crawler, templates::{SettingsTemplate, SchedulerRunsTemplate}};
+use crate::llm::Provider;
 use super::forms::*;
 use super::BoolGuard;
 
 // GET /settings — LLM config form + scheduler form + runs history
 pub async fn settings_page(State(app): State<AppState>) -> impl IntoResponse {
-    let (endpoint, api_key, model, openai_compat, mock_llm) = {
+    let (endpoint, api_key, model, provider, mock_llm) = {
         let llm = app.llm_config.read().unwrap_or_else(|e| e.into_inner());
-        (llm.endpoint.clone(), llm.api_key.clone(), llm.model.clone(), llm.openai_compat, llm.mock_llm)
+        (llm.endpoint.clone(), llm.api_key.clone(), llm.model.clone(), llm.provider, llm.mock_llm)
     };
     let sched = db::get_scheduler_config(&app.db).await.unwrap_or(db::SchedulerConfigRow {
         interval_minutes: 0,
@@ -22,30 +25,40 @@ pub async fn settings_page(State(app): State<AppState>) -> impl IntoResponse {
     let agent = db::get_agent_settings(&app.db).await.unwrap_or_default();
     let pipeline = db::get_pipeline_config(&app.db).await.unwrap_or_default();
     let unlocked = db::get_unlocked_files(&app.db).await.unwrap_or_default();
-    let all_files: Vec<String> = crate::profile::list_profile_files()
-        .unwrap_or_default()
-        .into_iter()
-        .map(|f| f.path)
-        .collect();
-    SettingsTemplate {
+   let all_files: Vec<String> = crate::profile::list_profile_files()
+       .unwrap_or_default()
+       .into_iter()
+       .map(|f| f.path)
+       .collect();
+    let overrides = db::get_agent_overrides(&app.db).await.unwrap_or_default();
+    let agent_override_rows: Vec<(String, String, String)> =
+        db::AGENT_ROLES.iter().map(|role| {
+            let o = overrides.get(*role);
+            (
+                role.to_string(),
+                o.and_then(|x| x.max_output).map(|v| v.to_string()).unwrap_or_default(),
+                o.and_then(|x| x.thinking_effort.clone()).unwrap_or_default(),
+            )
+        }).collect();
+   SettingsTemplate {
         llm_endpoint: endpoint,
         llm_api_key: api_key,
         llm_model: model,
-        llm_openai_compat: openai_compat,
+        llm_provider: provider.to_string(),
         llm_mock: mock_llm,
         scheduler_interval: sched.interval_minutes,
         scheduler_date_range: sched.date_range,
         scheduler_max_pages: sched.max_pages,
         scheduler_runs: runs,
-        status: String::new(),
         agent_ctx_window: agent.ctx_window,
         agent_max_output: agent.max_output,
         agent_thinking_effort: agent.thinking_effort,
         agent_wiki_query_max_hops: agent.wiki_query_max_hops,
         wiki_auto_ingest: agent.wiki_auto_ingest,
-        agent_max_review_iterations: agent.max_review_iterations,
-        llm_concurrency:    pipeline.llm_concurrency,
-        max_jobs_per_crawl: pipeline.max_jobs_per_crawl,
+       agent_max_review_iterations: agent.max_review_iterations,
+       llm_concurrency:    pipeline.llm_concurrency,
+        agent_override_rows:           agent_override_rows,
+       max_jobs_per_crawl: pipeline.max_jobs_per_crawl,
         profile_unlocked_files: unlocked,
         profile_all_files:      all_files,
     }
@@ -56,11 +69,15 @@ pub async fn settings_llm_save(
     State(app): State<AppState>,
     Form(body): Form<LlmSettingsForm>,
 ) -> Response {
+    let provider = body.provider.as_deref()
+        .filter(|s| !s.is_empty())
+        .map(Provider::parse)
+        .unwrap_or_else(|| Provider::from_endpoint(body.endpoint.trim()));
     let config = db::LlmConfigRow {
         endpoint: body.endpoint.trim().to_string(),
         api_key: body.api_key.trim().to_string(),
         model: body.model.trim().to_string(),
-        openai_compat: body.openai_compat.as_deref() == Some("on"),
+        provider,
         mock: body.mock_llm.as_deref() == Some("on"),
     };
     if let Err(e) = db::save_llm_config(&app.db, &config).await {
@@ -71,7 +88,7 @@ pub async fn settings_llm_save(
     llm.endpoint = config.endpoint;
     llm.api_key = config.api_key;
     llm.model = config.model;
-    llm.openai_compat = config.openai_compat;
+    llm.provider = config.provider;
     llm.mock_llm = config.mock;
     Html("<span style=\"color:var(--status-ok)\">LLM config saved.</span>").into_response()
 }
@@ -99,12 +116,12 @@ pub async fn settings_agent_save(
     Form(body): Form<AgentSettingsForm>,
 ) -> Response {
     let config = db::AgentSettings {
-        ctx_window:              body.ctx_window.max(1000),
-        max_output:              body.max_output.max(256),
+        ctx_window:              body.ctx_window.max(1),
+        max_output:              body.max_output.max(1),
         thinking_effort:         body.thinking_effort,
-        wiki_query_max_hops:     body.wiki_query_max_hops.clamp(1, 50),
+        wiki_query_max_hops:     body.wiki_query_max_hops.max(1),
         wiki_auto_ingest:        body.wiki_auto_ingest.as_deref() == Some("on"),
-        max_review_iterations:   body.max_review_iterations.clamp(1, 20),
+        max_review_iterations:   body.max_review_iterations.max(1),
     };
     if let Err(e) = db::save_agent_settings(&app.db, &config).await {
         return Html(format!("<span style=\"color:var(--status-err)\">Save failed: {}</span>",
@@ -119,14 +136,20 @@ pub async fn settings_pipeline_save(
     Form(body): Form<PipelineForm>,
 ) -> Response {
     let config = db::PipelineConfig {
-        llm_concurrency:    body.llm_concurrency.clamp(1, 64),
-        max_jobs_per_crawl: body.max_jobs_per_crawl.clamp(5, 500),
+        llm_concurrency:    body.llm_concurrency.max(1),
+        max_jobs_per_crawl: body.max_jobs_per_crawl.max(1),
     };
     if let Err(e) = db::save_pipeline_config(&app.db, &config).await {
         return Html(format!("<span style=\"color:var(--status-err)\">Save failed: {}</span>",
             e.to_string().replace('&', "&amp;").replace('<', "&lt;"))).into_response();
     }
-    Html("<span style=\"color:var(--status-ok)\">Pipeline config saved. Restart to apply concurrency change.</span>").into_response()
+    // Hot-swap the semaphore: build a new one and swap it in.
+    let new_sem = Arc::new(tokio::sync::Semaphore::new(config.llm_concurrency as usize));
+    {
+        let mut guard = app.llm_semaphore.write().unwrap_or_else(|e| e.into_inner());
+        *guard = new_sem;
+    }
+    Html("<span style=\"color:var(--status-ok)\">Pipeline config saved. Concurrency applied.</span>").into_response()
 }
 
 // ---------------------------------------------------------------------------
@@ -211,4 +234,85 @@ pub async fn settings_profile_lock_save(
             e.to_string().replace('&', "&amp;").replace('<', "&lt;"))).into_response();
     }
     Html("<span style=\"color:var(--status-ok)\">Profile lock settings saved.</span>").into_response()
+}
+
+// POST /settings/agent-overrides — save per-agent overrides
+pub async fn settings_agent_overrides_save(
+    State(app): State<AppState>,
+    body: Bytes,
+) -> Response {
+    // ponytail: manual parse — serde_urlencoded rejects repeated keys for Vec<T>.
+    let params: Vec<(std::borrow::Cow<'_, str>, std::borrow::Cow<'_, str>)> =
+        form_urlencoded::parse(&body).collect();
+    let roles: Vec<&str> = params.iter()
+        .filter(|(k, _)| k == "role")
+        .map(|(_, v)| v.as_ref())
+        .collect();
+    let max_outputs: Vec<&str> = params.iter()
+        .filter(|(k, _)| k == "max_output")
+        .map(|(_, v)| v.as_ref())
+        .collect();
+    let efforts: Vec<&str> = params.iter()
+        .filter(|(k, _)| k == "thinking_effort")
+        .map(|(_, v)| v.as_ref())
+        .collect();
+
+    let mut entries = Vec::new();
+    for (i, role) in roles.iter().enumerate() {
+        if !db::AGENT_ROLES.contains(role) {
+            continue;
+        }
+        let max_output = max_outputs.get(i)
+            .and_then(|s| s.trim().parse::<i64>().ok())
+            .filter(|_| max_outputs.get(i).map_or(false, |s| !s.trim().is_empty()));
+        let effort = efforts.get(i)
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty() && s != "inherit");
+        entries.push((role.to_string(), max_output, effort));
+    }
+    if let Err(e) = db::save_agent_overrides(&app.db, &entries).await {
+        return Html(format!("<span style=\"color:var(--status-err)\">Save failed: {}</span>",
+            e.to_string().replace('&', "&amp;").replace('<', "&lt;"))).into_response();
+    }
+    Html("<span style=\"color:var(--status-ok)\">Saved</span>").into_response()
+}
+
+// POST /settings/fetch-models — query the provider's model list
+pub async fn settings_fetch_models(State(app): State<AppState>) -> Response {
+    match crate::llm::fetch_models(&app).await {
+        Ok(models) => {
+            // Return a compact JSON array; the client turns it into a combobox.
+            let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
+            Html(format!(
+                "<script>window.__models = {};</script>",
+                serde_json::to_string(&ids).unwrap_or_default()
+            )).into_response()
+        }
+        Err(e) => Html(format!(
+            "<span style=\"color:var(--status-err)\">Failed: {}</span>",
+            e.to_string().replace('&', "&amp;").replace('<', "&lt;")
+        )).into_response(),
+    }
+}
+
+// POST /settings/fetch-capabilities — look up ctx_window + max_output for current model
+pub async fn settings_fetch_capabilities(State(app): State<AppState>) -> Response {
+    let model = {
+        let cfg = app.llm_config.read().unwrap_or_else(|e| e.into_inner());
+        cfg.model.clone()
+    };
+    if model.trim().is_empty() {
+        return Html("<span style=\"color:var(--status-err)\">Set a model first.</span>").into_response();
+    }
+    match crate::llm::fetch_capabilities(&app, &model).await {
+        Ok(caps) => Html(format!(
+            "<span id=\"caps-result\" data-ctx=\"{}\" data-out=\"{}\" \
+             style=\"color:var(--status-ok)\">ctx={}, out={} (source: {})</span>",
+            caps.ctx_window, caps.max_output, caps.ctx_window, caps.max_output, caps.source
+        )).into_response(),
+        Err(e) => Html(format!(
+            "<span style=\"color:var(--status-err)\">Failed: {}</span>",
+            e.to_string().replace('&', "&amp;").replace('<', "&lt;")
+        )).into_response(),
+    }
 }

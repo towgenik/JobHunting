@@ -166,22 +166,24 @@ pub struct SettingsTemplate {
     pub llm_endpoint:     String,
     pub llm_api_key:      String,
     pub llm_model:        String,
-    pub llm_openai_compat: bool,
+    pub llm_provider:     String,
     pub llm_mock:         bool,
     pub scheduler_interval: i64,
     pub scheduler_date_range: i64,
     pub scheduler_max_pages: i64,
     pub scheduler_runs:   Vec<SchedulerRunRow>,
-    pub status:           String,
     // Agent settings
     pub agent_ctx_window:              i64,
     pub agent_max_output:              i64,
     pub agent_thinking_effort:         String,
     pub agent_wiki_query_max_hops:     i64,
     pub wiki_auto_ingest:              bool,
-    pub agent_max_review_iterations:   i64,
+   pub agent_max_review_iterations:   i64,
+   // Pipeline tuning
+    // Per-agent overrides: (role, max_output or empty, thinking_effort or "inherit")
+    pub agent_override_rows:           Vec<(String, String, String)>,
     // Pipeline tuning
-    pub llm_concurrency:           i64,
+   pub llm_concurrency:           i64,
     pub max_jobs_per_crawl:        i64,
     // Profile lock
     pub profile_unlocked_files:    Vec<String>,
@@ -254,4 +256,3 @@ pub struct WorkshopJob {
     pub improvements:         Vec<String>,
     pub fabrication_items:    Vec<String>,
 }
-

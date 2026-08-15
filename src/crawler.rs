@@ -52,22 +52,33 @@ async fn process_discovered_urls(app: &AppState, search_id: Uuid, urls: Vec<Stri
         events::publish_crawl_progress(app, &format!("Spawned {spawned}/{total}: {hint}"));
 
         handles.push(tokio::spawn(async move {
-            if let Err(e) = generate::process_job(&app_clone, job_id).await {
-                eprintln!("search {search_id}: process_job {job_id} failed: {e}");
-                let _ = db::delete_job(&app_clone.db, job_id).await;
+           if let Err(e) = generate::process_job(&app_clone, job_id).await {
+               eprintln!("search {search_id}: process_job {job_id} failed: {e}");
+                // Don't delete cancelled jobs — process_job already set status to "cancelled"
+                if e.to_string() != "cancelled" {
+                    let _ = db::delete_job(&app_clone.db, job_id).await;
+                }
             }
         }));
     }
 
-    // Wait for all spawned jobs to complete.
-    let remaining = handles.len();
-    for (i, h) in handles.into_iter().enumerate() {
-        let _ = h.await;
-        set_crawl_activity(
-            app,
-            Some(search_id),
-            &format!("Completed {}/{total} jobs", spawned - remaining + i + 1),
-        );
+   // Wait for all spawned jobs to complete.
+   let remaining = handles.len();
+    if app.crawl_cancel.load(std::sync::atomic::Ordering::Relaxed) {
+        // Stop was pressed — abort remaining tasks, don't wait for them.
+        for h in handles {
+            h.abort();
+        }
+        set_crawl_activity(app, Some(search_id), &format!("Stopped: {spawned}/{total} jobs spawned"));
+    } else {
+        for (i, h) in handles.into_iter().enumerate() {
+            let _ = h.await;
+            set_crawl_activity(
+                app,
+                Some(search_id),
+                &format!("Completed {}/{total} jobs", spawned - remaining + i + 1),
+            );
+        }
     }
 
     set_crawl_activity(app, Some(search_id), &format!("Completed {spawned}/{total} jobs"));
@@ -115,31 +126,91 @@ pub async fn scheduler_browse(app: AppState, date_range: u32, max_pages: u32) ->
         a.active = true;
         a.stopping = false;
     }
-    set_crawl_activity(&app, Some(sid), &format!("Scheduler: browsing last {date_range} days"));
+   set_crawl_activity(&app, Some(sid), &format!("Scheduler: browsing last {date_range} days"));
+
+    if app.crawl_cancel.load(std::sync::atomic::Ordering::Relaxed) {
+        set_crawl_activity(&app, Some(sid), "Cancelled before scrape started");
+        events::publish_crawl_finished(&app);
+        finish_crawl_activity(&app);
+        return Ok(());
+    }
 
     // ponytail: 300s subprocess timeout. index_api.py has 30s per-request timeout,
     // but with 5 pages × 30s + delays the total can reach ~155s. 300s gives headroom
     // for DNS stalls or interpreter hangs without blocking the crawl forever.
-    let out = tokio::time::timeout(
-        std::time::Duration::from_secs(300),
-        tokio::process::Command::new("python3")
-            .arg("index_api.py")
-            .arg("")
-            .arg("--date-range").arg(date_range.to_string())
-            .arg("--sort").arg("ListedDate")
-            .arg("--pages").arg(max_pages.to_string())
-            .arg("--page-size").arg("100")
-            .arg("--site-key").arg("ID")
-            .arg("--locale").arg("id-ID")
-            .output(),
-    )
-    .await
-    .map_err(|_| anyhow::anyhow!("index_api.py timed out after 300s"))??;
+    let mut child = tokio::process::Command::new("python3")
+        .arg("index_api.py")
+        .arg("")
+        .arg("--date-range").arg(date_range.to_string())
+        .arg("--sort").arg("ListedDate")
+        .arg("--pages").arg(max_pages.to_string())
+        .arg("--page-size").arg("100")
+        .arg("--site-key").arg("ID")
+        .arg("--locale").arg("id-ID")
+        .stdout(std::process::Stdio::piped())
+       .stderr(std::process::Stdio::piped())
+      .spawn()?;
+
+    // Race the scrape subprocess against a cancel watcher and a 300s timeout.
+    // child.wait() borrows &mut child; child.kill() also borrows &mut child.
+    // Since tokio::select! runs only one branch, both borrows are exclusive.
+    let stdout_handle = child.stdout.take();
+    let stderr_handle = child.stderr.take();
+    let cancel = app.crawl_cancel.clone();
+
+    let status = tokio::select! {
+        _ = async {
+            loop {
+                if cancel.load(std::sync::atomic::Ordering::Relaxed) { break; }
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            }
+        } => {
+            let _ = child.kill().await;
+            set_crawl_activity(&app, Some(sid), "Scrape cancelled");
+            events::publish_crawl_finished(&app);
+            finish_crawl_activity(&app);
+            return Ok(());
+        }
+        s = child.wait() => {
+            let s = s?;
+            anyhow::ensure!(s.success(), "index_api.py failed");
+            s
+        }
+        _ = tokio::time::sleep(std::time::Duration::from_secs(300)) => {
+            let _ = child.kill().await;
+            anyhow::bail!("index_api.py timed out after 300s");
+        }
+    };
+
+    // Read stdout/stderr from the handles we took before the select.
+    let stdout = match stdout_handle {
+        Some(mut h) => {
+            let mut b = Vec::new();
+            let _ = tokio::io::AsyncReadExt::read_to_end(&mut h, &mut b).await;
+            b
+        }
+        None => Vec::new(),
+    };
+    let stderr = match stderr_handle {
+        Some(mut h) => {
+            let mut b = Vec::new();
+            let _ = tokio::io::AsyncReadExt::read_to_end(&mut h, &mut b).await;
+            b
+        }
+        None => Vec::new(),
+    };
+    let out = std::process::Output { status, stdout, stderr };
+
     anyhow::ensure!(
         out.status.success(),
         "index_api.py failed: {}",
         String::from_utf8_lossy(&out.stderr)
     );
+   anyhow::ensure!(
+       out.status.success(),
+       "index_api.py failed: {}",
+       String::from_utf8_lossy(&out.stderr)
+   );
 
     let jobs: Vec<Value> = serde_json::from_slice(&out.stdout)?;
     if jobs.is_empty() {

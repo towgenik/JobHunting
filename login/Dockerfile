@@ -15,8 +15,9 @@ RUN apt-get update --allow-releaseinfo-change || true && \
     (sed -i 's/focal/jammy/g' /etc/apt/sources.list && apt-get update && apt-get install -y --no-install-recommends socat) && \
     rm -rf /var/lib/apt/lists/*
 
-# Turn on Chrome remote debugging (CDP) + suppress the "Chrome is being automated" infobar.
-RUN sed -i 's|/opt/google/chrome/google-chrome --password-store=basic|/opt/google/chrome/google-chrome --password-store=basic --remote-debugging-port=9222 --remote-allow-origins=* --disable-blink-features=AutomationControlled --disable-infobars|g' /usr/bin/google-chrome
+# Turn on Chrome remote debugging (CDP) so session.py can read the login
+# session out over the websocket.
+RUN sed -i 's|/opt/google/chrome/google-chrome --password-store=basic|/opt/google/chrome/google-chrome --password-store=basic --remote-debugging-port=9222 --remote-allow-origins=*|g' /usr/bin/google-chrome
 
 # Entrypoint: launch the CDP forwarder, then hand off to KasmVNC's normal startup.
 COPY entrypoint.sh /dockerstartup/entrypoint.sh

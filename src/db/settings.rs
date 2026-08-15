@@ -1,5 +1,6 @@
 use anyhow::Result;
 use sqlx::SqlitePool;
+use crate::llm::Provider;
 
 // ---------------------------------------------------------------------------
 // LLM config in settings table
@@ -9,40 +10,49 @@ pub struct LlmConfigRow {
     pub endpoint: String,
     pub api_key: String,
     pub model: String,
-    pub openai_compat: bool,
+    pub provider: Provider,
     pub mock: bool,
 }
 
 impl Default for LlmConfigRow {
     fn default() -> Self {
-        Self { endpoint: String::new(), api_key: String::new(), model: String::new(), openai_compat: true, mock: false }
+        Self { endpoint: String::new(), api_key: String::new(), model: String::new(), provider: Provider::OpenaiCompat, mock: false }
     }
 }
 
 pub async fn get_llm_config(pool: &SqlitePool) -> Result<LlmConfigRow> {
     use sqlx::Row;
     let row = sqlx::query(
-        "SELECT llm_endpoint, llm_api_key, llm_model, llm_openai_compat, llm_mock FROM settings WHERE id = 1"
+        "SELECT llm_endpoint, llm_api_key, llm_model, llm_openai_compat, llm_provider, llm_mock FROM settings WHERE id = 1"
     )
     .fetch_one(pool)
     .await?;
+    let provider_str = row.try_get::<Option<String>, _>("llm_provider")?.unwrap_or_default();
+    let provider = if provider_str.is_empty() {
+        // Backwards compat: derive from legacy boolean column
+        let openai_compat = row.try_get::<i64, _>("llm_openai_compat")? != 0;
+        if openai_compat { Provider::Openai } else { Provider::Anthropic }
+    } else {
+        Provider::parse(&provider_str)
+    };
     Ok(LlmConfigRow {
         endpoint: row.try_get::<Option<String>, _>("llm_endpoint")?.unwrap_or_default(),
         api_key: row.try_get::<Option<String>, _>("llm_api_key")?.unwrap_or_default(),
         model: row.try_get::<Option<String>, _>("llm_model")?.unwrap_or_default(),
-        openai_compat: row.try_get::<i64, _>("llm_openai_compat")? != 0,
+        provider,
         mock: row.try_get::<i64, _>("llm_mock")? != 0,
     })
 }
 
 pub async fn save_llm_config(pool: &SqlitePool, config: &LlmConfigRow) -> Result<()> {
     sqlx::query(
-        "UPDATE settings SET llm_endpoint = ?, llm_api_key = ?, llm_model = ?, llm_openai_compat = ?, llm_mock = ? WHERE id = 1"
+        "UPDATE settings SET llm_endpoint = ?, llm_api_key = ?, llm_model = ?, llm_provider = ?, llm_openai_compat = ?, llm_mock = ? WHERE id = 1"
     )
     .bind(&config.endpoint)
     .bind(&config.api_key)
     .bind(&config.model)
-    .bind(config.openai_compat as i64)
+    .bind(config.provider.as_str())
+    .bind(config.provider.is_openai_family() as i64)
     .bind(config.mock as i64)
     .execute(pool)
     .await?;
@@ -217,5 +227,55 @@ pub async fn save_unlocked_files(pool: &SqlitePool, files: &[String]) -> Result<
         .bind(joined)
         .execute(pool)
         .await?;
+    Ok(())
+}
+// ---------------------------------------------------------------------------
+// Per-agent overrides
+// ---------------------------------------------------------------------------
+
+pub struct AgentOverride {
+    pub max_output:      Option<i64>,
+    pub thinking_effort: Option<String>,
+}
+
+/// Pipeline role keys (must match the HTML form values).
+pub const AGENT_ROLES: &[&str] = &[
+    "prescreen", "writer", "reviewer", "verifier", "editor", "ranker",
+];
+
+pub async fn get_agent_overrides(pool: &SqlitePool) -> Result<std::collections::HashMap<String, AgentOverride>> {
+    use sqlx::Row;
+    let mut map = std::collections::HashMap::new();
+    let rows = sqlx::query(
+        "SELECT role, max_output, thinking_effort FROM agent_overrides"
+    )
+    .fetch_all(pool)
+    .await?;
+    for row in rows {
+        let role: String = row.try_get("role")?;
+        let max_output: Option<i64> = row.try_get("max_output")?;
+        let effort_raw: Option<String> = row.try_get("thinking_effort")?;
+        let thinking_effort = effort_raw.filter(|s| !s.is_empty());
+        map.insert(role, AgentOverride { max_output, thinking_effort });
+    }
+    Ok(map)
+}
+
+pub async fn save_agent_overrides(
+    pool: &SqlitePool,
+    entries: &[(String, Option<i64>, Option<String>)],
+) -> Result<()> {
+    let mut tx = pool.begin().await?;
+    for (role, max_output, thinking_effort) in entries {
+        sqlx::query(
+            "INSERT OR REPLACE INTO agent_overrides (role, max_output, thinking_effort) VALUES (?, ?, ?)"
+        )
+        .bind(role)
+        .bind(max_output)
+        .bind(thinking_effort)
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
     Ok(())
 }

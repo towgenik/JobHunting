@@ -10,7 +10,7 @@ from playwright.sync_api import sync_playwright
 CDP_URL = os.environ.get("CDP_URL", "http://localhost:9223")
 # jobstreet.co.id redirects to id.jobstreet.com; cookies live under .jobstreet.com
 # and id.jobstreet.com. Use "jobstreet.com" to harvest both via domain substring match.
-HOST    = os.environ.get("SESSION_HOST", "jobstreet.com")
+HOSTS   = os.environ.get("SESSION_HOST", "jobstreet.com,login.seek.com,id.jobstreet.com")
 OUT     = Path(os.environ.get("SESSION_FILE",
              str(Path.home() / ".local" / "share" / "job-agent" / "session.json")))
 
@@ -18,6 +18,14 @@ OUT.parent.mkdir(parents=True, exist_ok=True)
 with sync_playwright() as p:
     browser = p.chromium.connect_over_cdp(CDP_URL)   # attach to the running KasmVNC Chrome
     ctx = browser.contexts[0]                         # default context holds the login
-    cookies = [c for c in ctx.cookies(f"https://{HOST}") if HOST in c["domain"]]
-    json.dump(cookies, OUT.open("w"))
-print(f"wrote {len(cookies)} cookies → {OUT}")
+    all_cookies = []
+    seen = set()
+    for host in HOSTS.split(","):
+        host = host.strip()
+        for c in ctx.cookies(f"https://{host}"):
+            key = (c["name"], c["domain"])
+            if key not in seen:
+                seen.add(key)
+                all_cookies.append(c)
+    json.dump(all_cookies, OUT.open("w"))
+print(f"wrote {len(all_cookies)} cookies → {OUT}")

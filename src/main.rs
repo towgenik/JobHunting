@@ -31,7 +31,7 @@ pub struct LlmConfig {
     pub endpoint: String,
     pub api_key: String,
     pub model: String,
-    pub openai_compat: bool,
+    pub provider: crate::llm::Provider,
     pub mock_llm: bool,
 }
 
@@ -40,7 +40,7 @@ pub struct AppState {
     pub db:               SqlitePool,
     pub http:             reqwest::Client,
     pub llm_config:       Arc<RwLock<LlmConfig>>,
-    pub llm_semaphore:    Arc<tokio::sync::Semaphore>,
+    pub llm_semaphore:    Arc<RwLock<Arc<tokio::sync::Semaphore>>>,
     pub scheduler_running: Arc<AtomicBool>,
     pub last_scheduler_run: Arc<AtomicI64>,
     pub profile_title_blacklist: Vec<String>,
@@ -85,6 +85,8 @@ pub fn finish_crawl_activity(app: &AppState) {
         a.active = false;
         a.stopping = false;
     }
+    // Reset the cancel flag so the next crawl isn't blocked.
+    app.crawl_cancel.store(false, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// Parse profile/index.md YAML frontmatter for pre-filter configuration.
@@ -129,16 +131,16 @@ async fn load_llm_config_with_env_fallback(pool: &SqlitePool) -> LlmConfig {
     let env_api_key = std::env::var("LLM_API_KEY").unwrap_or_default();
     let env_model = std::env::var("LLM_MODEL").unwrap_or_default();
     let env_mock = std::env::var("LLM_MOCK").is_ok();
-    let env_compat = std::env::var("LLM_PROVIDER")
-        .map(|v| v.to_lowercase() != "anthropic")
-        .unwrap_or_else(|_| !env_endpoint.contains("anthropic.com"));
-
     let is_empty = db_config.endpoint.is_empty();
+    let env_provider = std::env::var("LLM_PROVIDER")
+        .map(|v| crate::llm::Provider::parse(&v))
+        .unwrap_or_else(|_| crate::llm::Provider::from_endpoint(&env_endpoint));
+
     LlmConfig {
         endpoint: if is_empty { env_endpoint } else { db_config.endpoint },
         api_key:  if is_empty { env_api_key } else { db_config.api_key },
         model:    if is_empty { env_model } else { db_config.model },
-        openai_compat: if is_empty { env_compat } else { db_config.openai_compat },
+        provider: if is_empty { env_provider } else { db_config.provider },
         mock_llm: if is_empty { env_mock } else { db_config.mock },
     }
 }
@@ -159,7 +161,7 @@ impl AppState {
                 .build()
                 .expect("failed to build reqwest client"),
             llm_config: Arc::new(RwLock::new(llm_config)),
-            llm_semaphore: Arc::new(tokio::sync::Semaphore::new(concurrency)),
+            llm_semaphore: Arc::new(RwLock::new(Arc::new(tokio::sync::Semaphore::new(concurrency)))),
             scheduler_running: Arc::new(AtomicBool::new(false)),
             last_scheduler_run: Arc::new(AtomicI64::new(0)),
             profile_title_blacklist,
@@ -361,10 +363,13 @@ async fn main() {
         .route("/settings",          get(handlers::settings::settings_page))
         .route("/settings/llm",      post(handlers::settings::settings_llm_save))
         .route("/settings/scheduler", post(handlers::settings::settings_scheduler_save))
-        .route("/settings/agent",     post(handlers::settings::settings_agent_save))
-        .route("/settings/pipeline",  post(handlers::settings::settings_pipeline_save))
-        .route("/settings/test-llm",  post(handlers::settings::settings_test_llm))
-        .route("/settings/profile-lock", post(handlers::settings::settings_profile_lock_save))
+       .route("/settings/agent",     post(handlers::settings::settings_agent_save))
+       .route("/settings/pipeline",  post(handlers::settings::settings_pipeline_save))
+       .route("/settings/test-llm",  post(handlers::settings::settings_test_llm))
+        .route("/settings/agent-overrides",   post(handlers::settings::settings_agent_overrides_save))
+        .route("/settings/fetch-models",      post(handlers::settings::settings_fetch_models))
+        .route("/settings/fetch-capabilities", post(handlers::settings::settings_fetch_capabilities))
+       .route("/settings/profile-lock", post(handlers::settings::settings_profile_lock_save))
         .route("/settings/scheduler-runs", get(handlers::settings::settings_scheduler_runs))
         .route("/scheduler/run",     post(handlers::settings::scheduler_run))
         .merge(api::api_router(state_with_wiki.clone()))
